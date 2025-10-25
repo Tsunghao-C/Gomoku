@@ -80,7 +80,7 @@ class GomokuUI:
         pygame.display.set_caption("Gomoku AI Game - Thinking Visualization")
         self.clock = pygame.time.Clock()
         self.game = GomokuGame()
-        self.ai = GomokuAI(max_depth=6)  # Start with smaller depth for faster initial moves
+        self.ai = GomokuAI(max_depth=10)  # Start with smaller depth for faster initial moves
         self.ai_thinking = False
         self.last_ai_stats = {}
         self.thinking_progress = []
