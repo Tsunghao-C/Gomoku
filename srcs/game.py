@@ -22,6 +22,7 @@ class Player(Enum):
 
 class GomokuGame:
     def __init__(self):
+        # board 19 x 19 metrix representing the board state (0 = Empty, 1 = Black, 2 = White)
         self.board = [[Player.EMPTY for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
         self.current_player = Player.BLACK
         self.game_over = False
@@ -37,6 +38,7 @@ class GomokuGame:
         """Make a move on the board. Returns True if move is valid."""
         if 0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE and self.board[row][col] == Player.EMPTY and not self.game_over:
             self.board[row][col] = self.current_player
+            # Check win status, otherwise change current player.
             if self.check_win(row, col):
                 self.game_over = True
                 self.winner = self.current_player
@@ -290,6 +292,7 @@ class GomokuUI:
                                     self.ai_thinking = True
                                     self.make_ai_move()
                 elif event.type == pygame.KEYDOWN:
+                    # if key is "R" for reset, reset everything
                     if event.key == pygame.K_r:
                         self.game.reset()
                         self.ai_thinking = False

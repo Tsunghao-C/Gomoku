@@ -46,7 +46,7 @@ class GomokuAI:
 
     def get_priority_moves(self, board: list[list[Player]], player: Player) -> list[tuple[int, int]]:
         """
-        Get moves prioritized by relevance (near existing stones).
+        Get moves prioritized by relevance (near existing stones) and defensive needs.
         This is a key optimization - we don't need to consider all 361 positions!
         """
         if not any(Player.EMPTY != cell for row in board for cell in row):
@@ -65,7 +65,19 @@ class GomokuAI:
                             if 0 <= new_row < len(board) and 0 <= new_col < len(board[0]) and board[new_row][new_col] == Player.EMPTY:
                                 priority_moves.add((new_row, new_col))
 
-        return list(priority_moves) if priority_moves else self.get_valid_moves(board)
+        moves = list(priority_moves) if priority_moves else self.get_valid_moves(board)
+
+        # Prioritize defensive moves if there are immediate threats
+        opponent = self.get_opponent(player)
+        immediate_threats = self.find_immediate_threats(board, opponent)
+
+        if immediate_threats:
+            # Move threat positions to the front for immediate evaluation
+            defensive_moves = [move for move in moves if move in immediate_threats]
+            other_moves = [move for move in moves if move not in immediate_threats]
+            return defensive_moves + other_moves
+
+        return moves
 
     def evaluate_position(self, board: list[list[Player]], player: Player) -> float:
         """
@@ -76,56 +88,163 @@ class GomokuAI:
 
         # Check for immediate win/loss
         if self.check_win(board, player):
-            return 10000
+            return 100000  # Massive bonus for winning
         if self.check_win(board, self.get_opponent(player)):
-            return -10000
+            return -100000  # Massive penalty for losing
 
         score = 0
+        opponent = self.get_opponent(player)
 
-        # Evaluate all possible 5-in-a-row patterns
+        # First, check for immediate threats that must be blocked
+        immediate_threats = self.find_immediate_threats(board, opponent)
+        if immediate_threats:
+            # If opponent has immediate threats, prioritize blocking them
+            score -= 50000  # Large penalty for not blocking threats
+
+        # Evaluate all positions on the board
         for row in range(len(board)):
             for col in range(len(board[row])):
                 if board[row][col] == Player.EMPTY:
-                    # Check all directions from this position
-                    directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
-                    for dr, dc in directions:
-                        pattern_score = self.evaluate_pattern(board, row, col, dr, dc, player)
-                        score += pattern_score
+                    # Evaluate this empty position for both players
+                    player_score = self.evaluate_position_for_player(board, row, col, player)
+                    opponent_score = self.evaluate_position_for_player(board, row, col, opponent)
+
+                    # The position's value is the difference
+                    score += player_score - opponent_score
 
         return score
 
-    def evaluate_pattern(self, board: list[list[Player]], row: int, col: int, dr: int, dc: int, player: Player) -> float:
-        """Evaluate a specific 5-in-a-row pattern."""
-        # Count consecutive stones in both directions
-        player_count = 0
-        opponent_count = 0
-        empty_count = 0
+    def find_immediate_threats(self, board: list[list[Player]], player: Player) -> list[tuple[int, int]]:
+        """Find positions where the player has immediate winning threats (4 in a row)."""
+        threats = []
 
-        # Check 5 positions in the direction
-        for i in range(5):
-            r, c = row + i * dr, col + i * dc
-            if 0 <= r < len(board) and 0 <= c < len(board[0]):
-                if board[r][c] == player:
-                    player_count += 1
-                elif board[r][c] == self.get_opponent(player):
-                    opponent_count += 1
+        for row in range(len(board)):
+            for col in range(len(board[row])):
+                if board[row][col] == Player.EMPTY:
+                    # Check if placing a stone here would create a threat
+                    board[row][col] = player
+                    if self.check_win(board, player):
+                        threats.append((row, col))
+                    board[row][col] = Player.EMPTY
+
+        return threats
+
+    def evaluate_position_for_player(self, board: list[list[Player]], row: int, col: int, player: Player) -> float:
+        """Evaluate how good this position would be for the given player."""
+        score = 0
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]  # horizontal, vertical, diagonal
+
+        for dr, dc in directions:
+            pattern_score = self.evaluate_pattern_advanced(board, row, col, dr, dc, player)
+            score += pattern_score
+
+        return score
+
+    def evaluate_pattern_advanced(self, board: list[list[Player]], row: int, col: int, dr: int, dc: int, player: Player) -> float:
+        """Advanced pattern evaluation that recognizes threats and opportunities."""
+        # Check patterns of length 5 in this direction
+        patterns = []
+
+        # Get all 5-position patterns that include this position
+        for start in range(5):
+            pattern = []
+            valid = True
+
+            for i in range(5):
+                r, c = row + (i - start) * dr, col + (i - start) * dc
+                if 0 <= r < len(board) and 0 <= c < len(board[0]):
+                    pattern.append(board[r][c])
                 else:
-                    empty_count += 1
-            else:
-                # Out of bounds counts as opponent (blocked)
-                opponent_count += 1
+                    valid = False
+                    break
 
-        # If both players have stones in this pattern, it's blocked
+            if valid:
+                patterns.append(pattern)
+
+        # Evaluate each pattern
+        total_score = 0
+        for pattern in patterns:
+            total_score += self.score_pattern(pattern, player)
+
+        return total_score
+
+    def score_pattern(self, pattern: list[Player], player: Player) -> float:
+        """Score a 5-position pattern for the given player."""
+        opponent = self.get_opponent(player)
+
+        # Count stones in pattern
+        player_count = pattern.count(player)
+        opponent_count = pattern.count(opponent)
+        empty_count = pattern.count(Player.EMPTY)
+
+        # If both players have stones, it's blocked
         if player_count > 0 and opponent_count > 0:
             return 0
 
         # Score based on player stones
         if player_count > 0:
-            return player_count**3  # Exponential scoring for longer sequences
+            return self.get_pattern_score(player_count, empty_count)
         elif opponent_count > 0:
-            return -(opponent_count**3)  # Penalty for opponent sequences
+            return -self.get_pattern_score(opponent_count, empty_count)
 
         return 0
+
+    def get_pattern_score(self, stone_count: int, empty_count: int) -> float:
+        """Get score for a pattern with given stone and empty counts."""
+        # Pattern scoring based on Gomoku strategy
+        if stone_count == 5:
+            return 100000  # Five in a row - immediate win
+        elif stone_count == 4 and empty_count == 1:
+            return 10000   # Four in a row with one empty - immediate threat
+        elif stone_count == 3 and empty_count == 2:
+            return 1000    # Three in a row with two empty - strong threat
+        elif stone_count == 2 and empty_count == 3:
+            return 100     # Two in a row with three empty - potential threat
+        elif stone_count == 1 and empty_count == 4:
+            return 10      # One stone with four empty - weak potential
+        else:
+            return 0
+
+    def evaluate_threat_level(self, board: list[list[Player]], player: Player) -> float:
+        """Evaluate the overall threat level for the given player."""
+        threat_score = 0
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+        for row in range(len(board)):
+            for col in range(len(board[row])):
+                if board[row][col] == player:
+                    # Check all directions from this stone
+                    for dr, dc in directions:
+                        threat_score += self.evaluate_threat_in_direction(board, row, col, dr, dc, player)
+
+        return threat_score
+
+    def evaluate_threat_in_direction(self, board: list[list[Player]], row: int, col: int, dr: int, dc: int, player: Player) -> float:
+        """Evaluate threat level in a specific direction."""
+        # Count consecutive stones in this direction
+        count = 1
+        r, c = row + dr, col + dc
+        while 0 <= r < len(board) and 0 <= c < len(board[0]) and board[r][c] == player:
+            count += 1
+            r, c = r + dr, c + dc
+
+        # Count consecutive stones in opposite direction
+        r, c = row - dr, col - dc
+        while 0 <= r < len(board) and 0 <= c < len(board[0]) and board[r][c] == player:
+            count += 1
+            r, c = r - dr, c - dc
+
+        # Score based on threat level
+        if count >= 5:
+            return 100000  # Already won
+        elif count == 4:
+            return 10000   # Immediate threat
+        elif count == 3:
+            return 1000    # Strong threat
+        elif count == 2:
+            return 100     # Potential threat
+        else:
+            return 0
 
     def check_win(self, board: list[list[Player]], player: Player) -> bool:
         """Check if the given player has won."""
@@ -209,7 +328,7 @@ class GomokuAI:
 
         return best_score, best_move
 
-    def get_best_move(self, board: list[list[Player]], player: Player, time_limit: float = 0.4) -> tuple[tuple[int, int], float, dict]:
+    def get_best_move(self, board: list[list[Player]], player: Player, time_limit: float = 0.5) -> tuple[tuple[int, int], float, dict]:
         """
         Get the best move for the given player.
         Returns (move, score, stats)
