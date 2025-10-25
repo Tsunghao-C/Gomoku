@@ -1,0 +1,24 @@
+{
+    "python.analysis.typeCheckingMode": "basic",
+
+    "ruff.configuration": "ruff.toml",
+    // Enable Ruff lints and formatter
+    "ruff.lint.enable": true,
+    "ruff.format.enable": true,
+
+    // Make Ruff the default formatter for Python and format on save
+    "[python]": {
+      "editor.defaultFormatter": "astral-sh.ruff",
+      "editor.formatOnSave": true
+    },
+
+    // Run Ruff fixes and organize imports on save
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit",
+      "source.organizeImports": "explicit",
+      "source.fixAll.ruff": "explicit"
+    },
+
+    // Avoid conflicts with other formatters/linters
+    "python.formatting.provider": "none"
+  }

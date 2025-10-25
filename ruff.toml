@@ -1,0 +1,41 @@
+# Exclude files
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    "venv",
+    ".venv",
+]
+
+line-length = 150
+indent-width = 4
+
+target-version = "py312"
+
+[lint]
+select = [
+    "E", # pycodestyle errors
+    "W", # pycodestyle warnings
+    "F", # pyflakes
+    "C4", # falke8-comprehensions
+    "B", # falke8-bugbear
+    "I", # isort
+    "UP", # pyupgrade
+]
+
+ignore = ["E203"]
+fixable = ["ALL"]
+unfixable = []
+
+[format]
+# Ruff's formatter uses this width when wrapping code (including strings).
+line-ending = "auto"
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+docstring-code-format = false
+docstring-code-line-length = "dynamic"
+
+[lint.pydocstyle]
+convention = "google"
