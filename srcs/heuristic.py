@@ -6,17 +6,17 @@ Contains all scoring constants and pattern recognition functions.
 # --- Heuristic Score Constants ---
 WIN_SCORE = 1000000000
 PENDING_WIN_SCORE = 50000000
-BROKEN_FOUR = 400000  # _OO_OO_ or _O_OOO_
 OPEN_FOUR = 1000000  # _OOOO_
+BROKEN_FOUR = 400000  # _OO_OO_ or _O_OOO_
 CLOSED_FOUR = 50000  # XOOOO_
-CAPTURE_THREAT_OPEN = 30000  # (E.g., P O O E)
 OPEN_THREE = 10000  # _OOO_
 BROKEN_THREE = 4000  # _O_OO_
 CLOSED_THREE = 5000  # XOOO_
-CAPTURE_SETUP_BRIDGE = 1000  # (E.g., P O E P)
 OPEN_TWO = 100  # _OO_
 CLOSED_TWO = 10  # XOO_
+CAPTURE_THREAT_OPEN = 30000  # (E.g., P O O E)
 CAPTURE_SCORE = 2500  # Score per pair (so *2)
+CAPTURE_SETUP_BRIDGE = 1000  # (E.g., P O E P)
 
 
 class HeuristicEvaluator:
@@ -43,9 +43,10 @@ class HeuristicEvaluator:
             score += OPEN_FOUR
 
         # --- Broken Fours (400,000) ---
-        if "EPPEP E" in line or "E PEPPE" in line:  # _O_OOO_
+        # Pattern: 4 pieces with one gap (creates forcing threats)
+        if "EPEPPPE" in line or "EPPPEPE" in line:  # _O_OOO_ or _OOO_O_
             score += BROKEN_FOUR
-        if "EPP EPE" in line or "EPE PPE" in line:  # _OO_OO_
+        if "EPPEPPE" in line:  # _OO_OO_
             score += BROKEN_FOUR
 
         # --- Closed Fours (50,000) ---
@@ -66,15 +67,20 @@ class HeuristicEvaluator:
             score += OPEN_THREE
 
         # --- Closed Threes (5,000) ---
+        # Three consecutive pieces, one end blocked
         if ("XPPPE" in line or "EPPPX" in line or
             "OPPPE" in line or "EPPPO" in line):
             score += CLOSED_THREE
-        if ("XPPEP" in line or "EPPX" in line or
-            "OPPEP" in line or "EPPO" in line):
+        # Three pieces with one gap, one end blocked
+        if ("XPPEP" in line or "EPEPX" in line or
+            "OPPEP" in line or "EPEPO" in line):
             score += CLOSED_THREE
 
         # --- Broken Threes (4,000) ---
-        if "EPEP E" in line or "E PEP E" in line:  # _O_O_O_
+        # Pattern: 3 pieces with gaps between them
+        if "EPEPEPE" in line:  # _O_O_O_
+            score += BROKEN_THREE
+        if "EPEEPPE" in line or "EPPEEPE" in line:  # _O__OO_ or _OO__O_
             score += BROKEN_THREE
 
         # --- Capture Setups (1,000) ---
@@ -144,4 +150,3 @@ class HeuristicEvaluator:
         my_score = self.calculate_player_score(board, captures, player, win_by_captures)
         opponent_score = self.calculate_player_score(board, captures, opponent, win_by_captures)
         return my_score - opponent_score * 1.1
-
