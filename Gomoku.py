@@ -2,7 +2,7 @@
 Gomoku Game - Entry Point
 
 A sophisticated Gomoku (Five in a Row) game with AI opponent.
-Includes optimizations: Delta Heuristic, Alpha-Beta Pruning, 
+Includes optimizations: Delta Heuristic, Alpha-Beta Pruning,
 Iterative Deepening, Zobrist Hashing, and Transposition Tables.
 
 Controls:

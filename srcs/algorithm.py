@@ -47,7 +47,7 @@ class MinimaxAlgorithm:
                                    is_legal_func, check_terminal_func):
         """
         Performs iterative deepening search.
-        
+
         Args:
             game_state: The current game state (board, captures, etc.)
             ai_player: The AI player number
@@ -57,7 +57,7 @@ class MinimaxAlgorithm:
             undo_move_func: Function to undo a move
             is_legal_func: Function to check if a move is legal
             check_terminal_func: Function to check terminal state
-            
+
         Returns:
             tuple: (best_move, best_score, search_depth_reached)
         """
@@ -159,7 +159,7 @@ class MinimaxAlgorithm:
                undo_move_func, is_legal_func, check_terminal_func):
         """
         Recursive minimax algorithm with alpha-beta pruning and delta heuristic.
-        
+
         Args:
             game_state: Tuple of (board, captures, zobrist_hash)
             depth: Current search depth
@@ -173,7 +173,7 @@ class MinimaxAlgorithm:
             undo_move_func: Function to undo a move
             is_legal_func: Function to check if a move is legal
             check_terminal_func: Function to check terminal state
-            
+
         Returns:
             int: The evaluation score
         """
@@ -282,4 +282,3 @@ class MinimaxAlgorithm:
 
             self.transposition_table[full_hash] = (best_score, depth)
             return best_score
-

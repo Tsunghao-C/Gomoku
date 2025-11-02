@@ -452,7 +452,7 @@ class GomokuGame:
         board_copy = copy.deepcopy(board)
 
         # Check captures from this position
-        captured_pieces = self.check_and_apply_captures(row, col, player, board_copy)
+        captured_pieces = self.check_and_apply_captures(row, col, player, board_copy)  # noqa: F841
         board_copy[row][col] = player
 
         # Check for double-threes

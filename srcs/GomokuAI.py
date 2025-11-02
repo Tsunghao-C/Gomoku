@@ -33,7 +33,7 @@ class GomokuAI:
                      game_logic):
         """
         Gets the best move for the AI using iterative deepening minimax.
-        
+
         Args:
             board: The current board state
             captures: Dictionary of captures for each player
@@ -41,7 +41,7 @@ class GomokuAI:
             ai_player: The AI player number
             win_by_captures: Number of pairs needed to win
             game_logic: Reference to game logic functions
-            
+
         Returns:
             tuple: (best_move, time_taken)
         """
@@ -101,7 +101,7 @@ class GomokuAI:
         """
         Makes a move and calculates the delta (change in evaluation).
         This is the core of the Delta Heuristic optimization.
-        
+
         Returns:
             tuple: (delta, captured_pieces, old_capture_count, new_zobrist_hash)
         """
@@ -202,4 +202,3 @@ class GomokuAI:
                                 board[nr][nc] == 0):
                                 relevant_moves.add((nr, nc))
         return list(relevant_moves)
-
