@@ -2,11 +2,10 @@
 Gomoku AI module that coordinates the algorithm and heuristic evaluation.
 """
 
-import copy
 import time
 
 from srcs.algorithm import MinimaxAlgorithm
-from srcs.heuristic import CAPTURE_SCORE, WIN_SCORE, HeuristicEvaluator
+from srcs.heuristic import BROKEN_FOUR, CAPTURE_SCORE, OPEN_THREE, WIN_SCORE, HeuristicEvaluator
 
 
 class GomokuAI:
@@ -140,47 +139,137 @@ class GomokuAI:
     def get_ordered_moves(self, board, captures, player, game_logic):
         """
         Gets moves ordered by their local score (for move ordering optimization).
+        ENHANCED: Uses capture simulation to evaluate resulting board state.
         """
-        moves_with_scores = []
-        legal_moves = self.get_relevant_moves(board)
+        opponent = 2 if player == 1 else 1
+        win_by_captures = 5  # Standard Gomoku rule
 
-        # Copy captures for scoring
-        captures_copy = captures.copy()
+        # Tier 1: Immediate threats (check first)
+        winning_moves = []
+        blocking_moves = []
+        # Tier 2: High-value tactical moves
+        high_priority = []
+        # Tier 3: Good positional moves
+        mid_priority = []
+        # Tier 4: Normal developing moves
+        low_priority = []
+
+        legal_moves = self.get_relevant_moves(board)
 
         for (r, c) in legal_moves:
             is_legal, _ = game_logic.is_legal_move(r, c, player, board)
             if not is_legal:
                 continue
 
-            # Score move on a copy of the board
-            board_copy = copy.deepcopy(board)
-            score = self.score_move_locally(
-                r, c, player, board_copy, captures_copy, game_logic
+            # ENHANCED: Evaluate WITH capture simulation
+            # This shows us what the board looks like AFTER captures
+            my_score, my_capture_pairs = self._evaluate_with_captures(
+                r, c, player, board
             )
-            moves_with_scores.append((score, (r, c)))
+            opp_score, opp_capture_pairs = self._evaluate_with_captures(
+                r, c, opponent, board
+            )
 
-        # Sort by score (highest first)
-        moves_with_scores.sort(key=lambda x: x[0], reverse=True)
-        return [move for score, move in moves_with_scores]
+            # Add bonus for captures
+            if my_capture_pairs > 0:
+                my_score += my_capture_pairs * CAPTURE_SCORE
 
-    def score_move_locally(self, r, c, player, board, captures, game_logic):
+            # Check if this wins by captures
+            if captures[player] + (my_capture_pairs * 2) >= win_by_captures * 2:
+                my_score = WIN_SCORE * 0.95  # Almost as good as 5-in-a-row
+
+            # Check if opponent could win by captures (defensive)
+            if captures[opponent] + (opp_capture_pairs * 2) >= win_by_captures * 2:
+                opp_score = WIN_SCORE * 0.95
+
+            # Categorize by threat level
+            if my_score >= WIN_SCORE * 0.5:
+                winning_moves.append((my_score, (r, c)))
+            elif opp_score >= WIN_SCORE * 0.5:
+                blocking_moves.append((opp_score, (r, c)))
+            elif my_score >= BROKEN_FOUR or opp_score >= BROKEN_FOUR:
+                high_priority.append((max(my_score, opp_score * 1.1), (r, c)))
+            elif my_score >= OPEN_THREE or opp_score >= OPEN_THREE:
+                mid_priority.append((max(my_score, opp_score * 1.1), (r, c)))
+            else:
+                low_priority.append((my_score, (r, c)))
+
+        # Sort each tier by score (highest first)
+        winning_moves.sort(reverse=True)
+        blocking_moves.sort(reverse=True)
+        high_priority.sort(reverse=True)
+        mid_priority.sort(reverse=True)
+        low_priority.sort(reverse=True)
+
+        # Combine tiers (best moves first)
+        result = []
+        for tier in [winning_moves, blocking_moves, high_priority, mid_priority, low_priority]:
+            result.extend([move for score, move in tier])
+
+        # Limit to top 40 moves
+        return result[:40]
+
+    def _get_capture_positions(self, r, c, player, board):
         """
-        Quickly scores a move for move ordering.
-        Uses a copy of the board for fast simulation.
+        Get positions that would be captured by placing a piece at (r, c).
+        Returns list of (row, col) tuples to be captured.
+        Does NOT modify the board.
+        """
+        opponent = 2 if player == 1 else 1
+        captured = []
+
+        # Check all 8 directions for capture pattern: P-O-O-P
+        for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1),
+                       (0, -1), (-1, 0), (-1, -1), (-1, 1)]:
+            nr1, nc1 = r + dr, c + dc
+            nr2, nc2 = r + dr * 2, c + dc * 2
+            nr3, nc3 = r + dr * 3, c + dc * 3
+
+            if (0 <= nr3 < self.board_size and 0 <= nc3 < self.board_size):
+                if (board[nr1][nc1] == opponent and
+                    board[nr2][nc2] == opponent and
+                    board[nr3][nc3] == player):
+                    captured.append((nr1, nc1))
+                    captured.append((nr2, nc2))
+
+        return captured
+
+    def _evaluate_with_captures(self, r, c, player, board):
+        """
+        Evaluate a move INCLUDING the effects of captures.
+        Uses make/undo pattern: temporarily modifies board then restores it.
+
+        Returns:
+            tuple: (score, num_capture_pairs)
+                - score: Heuristic score after simulating captures
+                - num_capture_pairs: Number of pairs captured (for win-by-capture check)
         """
         opponent = 2 if player == 1 else 1
 
-        # Fast simulation on board copy
-        captured_pieces = game_logic.check_and_apply_captures(r, c, player, board)
+        # Step 1: Find what would be captured (read-only operation)
+        capture_positions = self._get_capture_positions(r, c, player, board)
+
+        if not capture_positions:
+            # No captures, just evaluate normally (read-only)
+            score = self.heuristic.score_lines_at(r, c, board, player, opponent)
+            return score, 0
+
+        # Step 2: Temporarily simulate the move (MODIFY board)
         board[r][c] = player
+        for (cr, cc) in capture_positions:
+            board[cr][cc] = 0  # Remove captured pieces
 
-        my_score = len(captured_pieces) * CAPTURE_SCORE
-        opponent_score = 0
+        # Step 3: Evaluate the resulting position
+        score = self.heuristic.score_lines_at(r, c, board, player, opponent)
 
-        my_score += self.heuristic.score_lines_at(r, c, board, player, opponent)
-        opponent_score += self.heuristic.score_lines_at(r, c, board, opponent, player)
+        # Step 4: RESTORE board to original state (CRITICAL!)
+        board[r][c] = 0
+        for (cr, cc) in capture_positions:
+            board[cr][cc] = opponent
 
-        return my_score - opponent_score * 1.1
+        # Return score and number of capture pairs
+        num_pairs = len(capture_positions) // 2
+        return score, num_pairs
 
     def get_relevant_moves(self, board):
         """
