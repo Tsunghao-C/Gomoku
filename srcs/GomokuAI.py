@@ -29,7 +29,7 @@ class GomokuAI:
         self.time_limit = algo_cfg["time_limit"]
         self.relevance_range = ai_cfg["relevance_range"]
 
-        # Heuristic scores
+        # Heuristic scores (for move ordering)
         self.WIN_SCORE = heuristic_cfg["scores"]["win_score"]
         self.BROKEN_FOUR = heuristic_cfg["scores"]["broken_four"]
         self.CAPTURE_SCORE = heuristic_cfg["scores"]["capture_score"]
@@ -184,6 +184,10 @@ class GomokuAI:
             if not is_legal:
                 continue
 
+            # Evaluate the move - vulnerability is now handled in heuristic
+            board[r][c] = player
+            captured_pieces = game_logic.check_and_apply_captures(r, c, player, board)
+
             # ENHANCED: Evaluate WITH capture simulation
             my_score, my_capture_pairs = self._evaluate_with_captures(
                 r, c, player, board
@@ -197,14 +201,20 @@ class GomokuAI:
                 my_score += my_capture_pairs * self.CAPTURE_SCORE
 
             # Check if this wins by captures
-            if captures[player] + (my_capture_pairs * 2) >= win_by_captures * 2:
+            if captures[player] + len(captured_pieces) >= win_by_captures * 2:
                 my_score = self.WIN_SCORE * 0.95
 
             # Check if opponent could win by captures (defensive)
+            # Note: This checks if opponent could win on THEIR next move
             if captures[opponent] + (opp_capture_pairs * 2) >= win_by_captures * 2:
                 opp_score = self.WIN_SCORE * 0.95
 
-            # Categorize by threat level
+            # Undo the temporary move
+            game_logic.undo_move(r, c, player, board, captured_pieces,
+                               captures[player], captures,
+                               game_logic.current_hash)
+
+            # Categorize by threat level (vulnerability already in scores)
             if my_score >= self.WIN_SCORE * 0.5:
                 winning_moves.append((my_score, (r, c)))
             elif opp_score >= self.WIN_SCORE * 0.5:

@@ -67,8 +67,26 @@ Pattern evaluation scores:
 - `open_two`: Score for open two (default: 100)
 - `closed_two`: Score for closed two (default: 10)
 - `capture_threat_open`: Score for capture threat (default: 30,000)
-- `capture_score`: Score per captured pair (default: 2,500)
+- `capture_score`: Score per captured pair (default: 5,000)
 - `capture_setup_bridge`: Score for capture setup (default: 1,000)
+
+**`capture_defense`** sub-section controls AI defensive behavior when opponent is close to winning by captures:
+
+- `enable`: Enable/disable capture defense mechanism (default: true)
+- `critical_threshold`: Stone count when AI becomes highly defensive (default: 8)
+  - When opponent has this many stones, AI heavily penalizes vulnerable moves
+- `warning_threshold`: Stone count when AI starts being cautious (default: 6)
+  - When opponent has this many stones, AI moderately penalizes vulnerable moves
+- `critical_penalty`: Penalty per vulnerable pair in critical zone (default: 500,000)
+- `warning_penalty`: Penalty per vulnerable pair in warning zone (default: 100,000)
+- `desperate_penalty`: Penalty when opponent is 1 capture from winning (default: 2,000,000)
+
+**How Capture Defense Works:**
+When the opponent has captured many stones (e.g., 8 out of 10 needed to win), the AI becomes defensive and avoids placing stones that would create vulnerable pairs (two adjacent stones that could be captured). The penalty scales with:
+1. How close the opponent is to winning
+2. How many pairs the move makes vulnerable
+
+This prevents the AI from carelessly giving the opponent the final capture needed to win.
 
 ### 5. `ai_settings`
 
@@ -126,6 +144,10 @@ Visual appearance and UI configuration:
 - Adjust pattern scores to change AI's playing style
 - Increase `capture_score` to make AI more aggressive with captures
 - Increase `open_four` to make AI prioritize four-in-a-row threats
+- Adjust `capture_defense` thresholds to control defensive behavior:
+  - Lower `critical_threshold` to make AI defensive earlier
+  - Increase penalties to make AI even more cautious
+  - Disable `enable` to turn off defensive behavior entirely
 
 ### UI Customization
 - Change `colors` to customize the look
