@@ -27,9 +27,10 @@ class GomokuAI:
         self.ai_is_thinking = False
         self.current_search_depth = 0
         self.last_move_time = 0.0
+        self.last_depth_reached = 0
 
     def get_best_move(self, board, captures, zobrist_hash, ai_player, win_by_captures,
-                     game_logic):
+                     game_logic, num_moves):
         """
         Gets the best move for the AI using iterative deepening minimax.
 
@@ -40,11 +41,12 @@ class GomokuAI:
             ai_player: The AI player number
             win_by_captures: Number of pairs needed to win
             game_logic: Reference to game logic functions
+            num_moves: Total number of moves played so far
 
         Returns:
             tuple: (best_move, time_taken)
         """
-        print(f"[{'Black' if ai_player == 1 else 'White'}] is thinking...")
+        print(f"[{'Black' if ai_player == 1 else 'White'}] is thinking... (Move #{num_moves})")
 
         start_time = time.time()
 
@@ -58,7 +60,7 @@ class GomokuAI:
 
         # Create wrapper functions for game logic
         def ordered_moves_wrapper(board, captures, player):
-            return self.get_ordered_moves(board, captures, player, game_logic)
+            return self.get_ordered_moves(board, captures, player, game_logic, num_moves)
 
         def make_move_wrapper(r, c, player, board, captures, zobrist_hash):
             return self.make_move_and_get_delta(
@@ -81,17 +83,20 @@ class GomokuAI:
                 board, captures, player, r, c, win_by_captures
             )
 
-        # Perform iterative deepening search
+        # Perform iterative deepening search with adaptive starting depth
         game_state = (board, captures, zobrist_hash)
         best_move, best_score, depth_reached = self.algorithm.iterative_deepening_search(
             game_state, ai_player, initial_board_score,
             ordered_moves_wrapper, make_move_wrapper, undo_move_wrapper,
-            is_legal_wrapper, check_terminal_wrapper
+            is_legal_wrapper, check_terminal_wrapper, num_moves
         )
 
         time_taken = time.time() - start_time
         self.last_move_time = time_taken
+        self.last_depth_reached = depth_reached
         self.current_search_depth = 0
+
+        print(f"Search completed: depth={depth_reached}, time={time_taken:.2f}s")
 
         return best_move, time_taken
 
@@ -136,10 +141,10 @@ class GomokuAI:
 
         return delta, captured_pieces, old_capture_count, new_hash
 
-    def get_ordered_moves(self, board, captures, player, game_logic):
+    def get_ordered_moves(self, board, captures, player, game_logic, num_moves):
         """
         Gets moves ordered by their local score (for move ordering optimization).
-        ENHANCED: Uses capture simulation to evaluate resulting board state.
+        ENHANCED: Uses capture simulation and adaptive move limits.
         """
         opponent = 2 if player == 1 else 1
         win_by_captures = 5  # Standard Gomoku rule
@@ -151,10 +156,11 @@ class GomokuAI:
         high_priority = []
         # Tier 3: Good positional moves
         mid_priority = []
-        # Tier 4: Normal developing moves
+        # Tier 4: Normal developing moves (only used early game)
         low_priority = []
 
-        legal_moves = self.get_relevant_moves(board)
+        # ENHANCED: Use windowed move generation for better performance
+        legal_moves = self.get_relevant_moves_windowed(board, num_moves)
 
         for (r, c) in legal_moves:
             is_legal, _ = game_logic.is_legal_move(r, c, player, board)
@@ -162,7 +168,6 @@ class GomokuAI:
                 continue
 
             # ENHANCED: Evaluate WITH capture simulation
-            # This shows us what the board looks like AFTER captures
             my_score, my_capture_pairs = self._evaluate_with_captures(
                 r, c, player, board
             )
@@ -176,7 +181,7 @@ class GomokuAI:
 
             # Check if this wins by captures
             if captures[player] + (my_capture_pairs * 2) >= win_by_captures * 2:
-                my_score = WIN_SCORE * 0.95  # Almost as good as 5-in-a-row
+                my_score = WIN_SCORE * 0.95
 
             # Check if opponent could win by captures (defensive)
             if captures[opponent] + (opp_capture_pairs * 2) >= win_by_captures * 2:
@@ -201,13 +206,100 @@ class GomokuAI:
         mid_priority.sort(reverse=True)
         low_priority.sort(reverse=True)
 
-        # Combine tiers (best moves first)
-        result = []
-        for tier in [winning_moves, blocking_moves, high_priority, mid_priority, low_priority]:
-            result.extend([move for score, move in tier])
+        # ENHANCED: Aggressive move limiting based on game phase
+        if winning_moves:
+            # If we have winning moves, only consider those
+            return [move for score, move in winning_moves[:5]]
 
-        # Limit to top 40 moves
-        return result[:40]
+        if blocking_moves:
+            # Must block, but also consider our threats
+            result = [move for score, move in blocking_moves[:6]]
+            result.extend([move for score, move in high_priority[:6]])
+            return result[:12]
+
+        # Adaptive max moves based on game phase
+        if num_moves < 10:
+            max_moves = 18  # Early game: explore more
+        elif num_moves < 25:
+            max_moves = 14  # Mid game: focused
+        else:
+            max_moves = 12  # Late game: very focused
+
+        # Combine tiers with limits
+        result = []
+        result.extend([move for score, move in high_priority[:max_moves // 2]])
+        result.extend([move for score, move in mid_priority[:max_moves // 3]])
+
+        # Always include some low priority moves if we don't have enough
+        if len(result) < max_moves // 2:
+            result.extend([move for score, move in low_priority[:max_moves]])
+
+        # Ensure we always return moves if any exist
+        if not result:
+            # Fallback: combine all tiers and return best moves
+            all_moves = (winning_moves + blocking_moves + high_priority +
+                        mid_priority + low_priority)
+            if all_moves:
+                all_moves.sort(reverse=True)
+                result = [move for score, move in all_moves[:max_moves]]
+
+        return result[:max_moves]
+
+    def get_bounding_box(self, board, padding=3):
+        """
+        Find the minimal rectangle containing all pieces, plus padding.
+        Returns: (min_row, max_row, min_col, max_col)
+        """
+        min_r, max_r = self.board_size, -1
+        min_c, max_c = self.board_size, -1
+
+        for r in range(self.board_size):
+            for c in range(self.board_size):
+                if board[r][c] != 0:
+                    min_r = min(min_r, r)
+                    max_r = max(max_r, r)
+                    min_c = min(min_c, c)
+                    max_c = max(max_c, c)
+
+        # Add padding
+        min_r = max(0, min_r - padding)
+        max_r = min(self.board_size - 1, max_r + padding)
+        min_c = max(0, min_c - padding)
+        max_c = min(self.board_size - 1, max_c + padding)
+
+        return (min_r, max_r, min_c, max_c)
+
+    def get_relevant_moves_windowed(self, board, num_moves):
+        """
+        Optimized move generation using bounding box.
+        Uses adaptive strategy based on game phase.
+        """
+        relevant_moves = set()
+
+        # Early game (< 12 moves): Use full board with small radius
+        if num_moves < 12:
+            return self.get_relevant_moves(board)
+
+        # Mid-late game: Use bounding box for efficiency
+        padding = 3 if num_moves < 25 else 2
+        min_r, max_r, min_c, max_c = self.get_bounding_box(board, padding)
+
+        # Only scan within bounding box
+        for r in range(min_r, max_r + 1):
+            for c in range(min_c, max_c + 1):
+                if board[r][c] != 0:
+                    # Add empty squares around pieces
+                    for dr in range(-self.relevance_range, self.relevance_range + 1):
+                        for dc in range(-self.relevance_range, self.relevance_range + 1):
+                            if dr == 0 and dc == 0:
+                                continue
+                            nr, nc = r + dr, c + dc
+                            if (min_r <= nr <= max_r and
+                                min_c <= nc <= max_c and
+                                board[nr][nc] == 0):
+                                relevant_moves.add((nr, nc))
+
+        return list(relevant_moves)
 
     def _get_capture_positions(self, r, c, player, board):
         """
@@ -241,28 +333,26 @@ class GomokuAI:
 
         Returns:
             tuple: (score, num_capture_pairs)
-                - score: Heuristic score after simulating captures
-                - num_capture_pairs: Number of pairs captured (for win-by-capture check)
         """
         opponent = 2 if player == 1 else 1
 
-        # Step 1: Find what would be captured (read-only operation)
+        # Step 1: Find what would be captured
         capture_positions = self._get_capture_positions(r, c, player, board)
 
         if not capture_positions:
-            # No captures, just evaluate normally (read-only)
+            # No captures, just evaluate normally
             score = self.heuristic.score_lines_at(r, c, board, player, opponent)
             return score, 0
 
-        # Step 2: Temporarily simulate the move (MODIFY board)
+        # Step 2: Temporarily simulate the move
         board[r][c] = player
         for (cr, cc) in capture_positions:
-            board[cr][cc] = 0  # Remove captured pieces
+            board[cr][cc] = 0
 
         # Step 3: Evaluate the resulting position
         score = self.heuristic.score_lines_at(r, c, board, player, opponent)
 
-        # Step 4: RESTORE board to original state (CRITICAL!)
+        # Step 4: RESTORE board to original state
         board[r][c] = 0
         for (cr, cc) in capture_positions:
             board[cr][cc] = opponent
@@ -274,13 +364,12 @@ class GomokuAI:
     def get_relevant_moves(self, board):
         """
         Gets moves that are within RELEVANCE_RANGE of existing pieces.
-        This dramatically reduces the branching factor.
+        Original implementation for early game.
         """
         relevant_moves = set()
         for r in range(self.board_size):
             for c in range(self.board_size):
-                if board[r][c] != 0:  # Found a piece
-                    # Add all empty squares around it
+                if board[r][c] != 0:
                     for dr in range(-self.relevance_range, self.relevance_range + 1):
                         for dc in range(-self.relevance_range, self.relevance_range + 1):
                             if dr == 0 and dc == 0:

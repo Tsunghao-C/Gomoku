@@ -38,9 +38,9 @@ WHITE_PLAYER = 2
 # AI Configuration
 AI_PLAYER = WHITE_PLAYER
 HUMAN_PLAYER = BLACK_PLAYER
-AI_MAX_DEPTH = 10
-AI_TIME_LIMIT = 2.0
-AI_RELEVANCE_RANGE = 2
+AI_MAX_DEPTH = 12  # Increased for deeper search
+AI_TIME_LIMIT = 3.0
+AI_RELEVANCE_RANGE = 1  # Reduced for better performance
 
 
 class GomokuGame:
@@ -67,6 +67,7 @@ class GomokuGame:
         self.last_move_time = 0.0
         self.captures = {BLACK_PLAYER: 0, WHITE_PLAYER: 0}
         self.WIN_BY_CAPTURES = 5
+        self.move_count = 0  # Track total moves for adaptive AI
 
         # Hover UI
         self.hover_pos = None
@@ -96,6 +97,7 @@ class GomokuGame:
         self.board[7][7] = HUMAN_PLAYER
         self.current_player = AI_PLAYER
         self.current_hash = self.compute_initial_hash()
+        self.move_count = 1  # Count the initial center move
 
     # ---
     # Zobrist Hashing
@@ -202,6 +204,7 @@ class GomokuGame:
         self.game_mode = "P_VS_AI"
 
         self.current_hash = self.compute_initial_hash()
+        self.move_count = 1  # Reset to 1 (initial center move)
 
     def update_hover(self, pos):
         """Updates hover position and checks if move is legal."""
@@ -253,6 +256,7 @@ class GomokuGame:
         captured_pieces, new_hash = self.make_move(row, col, player, self.board,
                                                    self.current_hash)
         self.current_hash = new_hash
+        self.move_count += 1  # Increment move counter
 
         if captured_pieces:
             print(f"!!! Captured {len(captured_pieces)} pieces at: {captured_pieces}")
@@ -311,7 +315,7 @@ class GomokuGame:
         """Runs the AI to get the best move."""
         best_move, time_taken = self.ai.get_best_move(
             self.board, self.captures, self.current_hash, AI_PLAYER,
-            self.WIN_BY_CAPTURES, self
+            self.WIN_BY_CAPTURES, self, self.move_count
         )
 
         self.last_move_time = time_taken

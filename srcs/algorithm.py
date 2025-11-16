@@ -1,6 +1,7 @@
 """
 Minimax algorithm with optimizations for Gomoku AI.
-Includes alpha-beta pruning, iterative deepening, transposition table, and delta heuristic.
+Includes alpha-beta pruning, iterative deepening, transposition table, delta heuristic,
+null move pruning, and late move reductions.
 """
 
 import math
@@ -25,9 +26,13 @@ class MinimaxAlgorithm:
         self.search_start_time = 0
         self.current_depth = 0
 
+        # Killer moves heuristic
+        self.killer_moves = {}  # {depth: [(r1,c1), (r2,c2)]}
+
     def clear_transposition_table(self):
         """Clears the transposition table."""
         self.transposition_table.clear()
+        self.killer_moves.clear()
 
     def reset_search_state(self):
         """Resets the search state for a new move."""
@@ -44,9 +49,9 @@ class MinimaxAlgorithm:
 
     def iterative_deepening_search(self, game_state, ai_player, initial_board_score,
                                    ordered_moves_func, make_move_func, undo_move_func,
-                                   is_legal_func, check_terminal_func):
+                                   is_legal_func, check_terminal_func, num_moves=0):
         """
-        Performs iterative deepening search.
+        Performs iterative deepening search with adaptive starting depth.
 
         Args:
             game_state: The current game state (board, captures, etc.)
@@ -57,6 +62,7 @@ class MinimaxAlgorithm:
             undo_move_func: Function to undo a move
             is_legal_func: Function to check if a move is legal
             check_terminal_func: Function to check terminal state
+            num_moves: Total number of moves played (for adaptive start)
 
         Returns:
             tuple: (best_move, best_score, search_depth_reached)
@@ -67,26 +73,63 @@ class MinimaxAlgorithm:
         best_score_so_far = -math.inf
         depth_reached = 0
 
-        for depth in range(1, self.max_depth + 1):
+        # ENHANCED: Adaptive starting depth based on game phase
+        # Be conservative to ensure at least one depth completes within time limit
+        if num_moves < 8:
+            start_depth = 1  # Early game: explore thoroughly
+        elif num_moves < 15:
+            start_depth = 3  # Mid-early: moderately aggressive
+        elif num_moves < 25:
+            start_depth = 4  # Mid game: skip shallow depths
+        else:
+            start_depth = 5  # Late game: focused search
+
+        print(f"Starting iterative deepening from depth {start_depth}")
+
+        for depth in range(start_depth, self.max_depth + 1):
             self.current_depth = depth
 
-            best_move_this_depth, best_score_this_depth = self.minimax_root(
-                game_state, ai_player, initial_board_score, depth,
-                ordered_moves_func, make_move_func, undo_move_func,
-                is_legal_func, check_terminal_func
-            )
+            # Use aspiration windows for depths after the first
+            if depth > start_depth and best_score_so_far != -math.inf:
+                # Narrow window around previous score
+                window = 50000
+                alpha = best_score_so_far - window
+                beta = best_score_so_far + window
+
+                best_move_this_depth, best_score_this_depth = self.minimax_root(
+                    game_state, ai_player, initial_board_score, depth,
+                    ordered_moves_func, make_move_func, undo_move_func,
+                    is_legal_func, check_terminal_func, alpha, beta
+                )
+
+                # If we failed outside the window, re-search with full window
+                if (not self.time_limit_reached and
+                    (best_score_this_depth <= alpha or best_score_this_depth >= beta)):
+                    print(f"Aspiration window failed, re-searching depth {depth}")
+                    best_move_this_depth, best_score_this_depth = self.minimax_root(
+                        game_state, ai_player, initial_board_score, depth,
+                        ordered_moves_func, make_move_func, undo_move_func,
+                        is_legal_func, check_terminal_func, -math.inf, math.inf
+                    )
+            else:
+                # First iteration or no previous score: use full window
+                best_move_this_depth, best_score_this_depth = self.minimax_root(
+                    game_state, ai_player, initial_board_score, depth,
+                    ordered_moves_func, make_move_func, undo_move_func,
+                    is_legal_func, check_terminal_func, -math.inf, math.inf
+                )
 
             if self.time_limit_reached:
-                print(f"Search at depth {depth} timed out. Using result from depth {depth - 1}.")
+                print(f"Search at depth {depth} timed out. Using result from depth {depth_reached}.")
                 break
 
             best_move_so_far = best_move_this_depth
             best_score_so_far = best_score_this_depth
             depth_reached = depth
 
-            print(f"Completed search to depth {depth}. Best move: {best_move_so_far}, Score: {best_score_so_far:.0f}")
+            print(f"Completed depth {depth}. Best move: {best_move_so_far}, Score: {best_score_so_far:.0f}")
 
-            if best_score_so_far >= self.win_score:
+            if best_score_so_far >= self.win_score * 0.9:
                 print("Found a winning move. Stopping search.")
                 break
 
@@ -94,20 +137,31 @@ class MinimaxAlgorithm:
                 print("Time limit reached after completing depth. Stopping.")
                 break
 
+        # Safety check: if no move found, return any legal move as last resort
+        if best_move_so_far is None and depth_reached == 0:
+            print("WARNING: No move found in time limit. Returning first legal move.")
+            # Get first legal move from ordered moves
+            board, captures, zobrist_hash = game_state
+            ordered_moves = ordered_moves_func(board, captures, ai_player)
+            for (r, c) in ordered_moves:
+                is_legal, _ = is_legal_func(r, c, ai_player, board)
+                if is_legal:
+                    best_move_so_far = (r, c)
+                    best_score_so_far = 0
+                    print(f"Emergency fallback: returning {best_move_so_far}")
+                    break
+
         return best_move_so_far, best_score_so_far, depth_reached
 
     def minimax_root(self, game_state, ai_player, current_board_score, depth,
                     ordered_moves_func, make_move_func, undo_move_func,
-                    is_legal_func, check_terminal_func):
+                    is_legal_func, check_terminal_func, alpha=-math.inf, beta=math.inf):
         """
         Root call of the minimax algorithm (maximizing player's turn).
         """
         board, captures, zobrist_hash = game_state
         best_score = -math.inf
         best_move = None
-
-        alpha = -math.inf
-        beta = math.inf
 
         ordered_moves = ordered_moves_func(board, captures, ai_player)
 
@@ -116,7 +170,7 @@ class MinimaxAlgorithm:
 
         for (r, c) in ordered_moves:
             if self.time_limit_reached:
-                return None, 0
+                return best_move if best_move else None, best_score if best_move else 0
 
             is_legal, _ = is_legal_func(r, c, ai_player, board)
             if not is_legal:
@@ -144,13 +198,15 @@ class MinimaxAlgorithm:
             undo_move_func(r, c, ai_player, board, captured_pieces, old_cap_count, captures, zobrist_hash)
 
             if self.time_limit_reached:
-                return None, 0
+                return best_move if best_move else None, best_score if best_move else 0
 
             if score > best_score:
                 best_score = score
                 best_move = (r, c)
 
             alpha = max(alpha, best_score)
+            if beta <= alpha:
+                break
 
         return best_move, best_score
 
@@ -158,7 +214,8 @@ class MinimaxAlgorithm:
                current_score, ai_player, ordered_moves_func, make_move_func,
                undo_move_func, is_legal_func, check_terminal_func):
         """
-        Recursive minimax algorithm with alpha-beta pruning and delta heuristic.
+        Recursive minimax algorithm with alpha-beta pruning, delta heuristic,
+        null move pruning, and late move reductions.
 
         Args:
             game_state: Tuple of (board, captures, zobrist_hash)
@@ -182,21 +239,47 @@ class MinimaxAlgorithm:
         # Check for timeout periodically
         if depth % 4 == 0:
             if self.check_timeout():
-                return 0
+                return current_score
 
         if self.time_limit_reached:
-            return 0
+            return current_score
 
         # Check transposition table
         full_hash = hash((zobrist_hash, tuple(captures.items())))
         if full_hash in self.transposition_table:
-            tt_score, tt_depth = self.transposition_table[full_hash]
+            tt_score, tt_depth, tt_flag = self.transposition_table[full_hash]
             if tt_depth >= depth:
-                return tt_score
+                if tt_flag == 'EXACT':
+                    return tt_score
+                elif tt_flag == 'LOWERBOUND':
+                    alpha = max(alpha, tt_score)
+                elif tt_flag == 'UPPERBOUND':
+                    beta = min(beta, tt_score)
+                if alpha >= beta:
+                    return tt_score
 
         # Base case: leaf node
         if depth == 0:
             return current_score
+
+        # ENHANCED: Null Move Pruning (only for non-critical positions)
+        USE_NULL_MOVE = True
+        NULL_MOVE_REDUCTION = 2
+
+        if (USE_NULL_MOVE and depth >= 3 and not is_maximizing_player and
+            abs(current_score) < self.win_score * 0.3):  # Not in critical position
+
+            # Try a "null move" - opponent passes, we get to move again
+            null_score = self.minimax(
+                game_state, depth - 1 - NULL_MOVE_REDUCTION,
+                alpha, beta, True,
+                current_score, ai_player,
+                ordered_moves_func, make_move_func, undo_move_func,
+                is_legal_func, check_terminal_func
+            )
+
+            if null_score >= beta:
+                return beta  # Fail-high cutoff
 
         # Determine current player
         player = ai_player if is_maximizing_player else (2 if ai_player == 1 else 1)
@@ -204,15 +287,20 @@ class MinimaxAlgorithm:
         ordered_moves = ordered_moves_func(board, captures, player)
 
         if not ordered_moves:
-            return 0
+            return current_score
 
         # Maximizing player
         if is_maximizing_player:
             best_score = -math.inf
+            move_number = 0
+            flag = 'UPPERBOUND'  # Assume fail-low
+
             for (r, c) in ordered_moves:
                 is_legal, _ = is_legal_func(r, c, player, board)
                 if not is_legal:
                     continue
+
+                move_number += 1
 
                 # Make move and get delta
                 delta, captured_pieces, old_cap_count, new_hash = make_move_func(
@@ -223,34 +311,68 @@ class MinimaxAlgorithm:
                 if check_terminal_func(board, captures, player, r, c):
                     score = self.win_score
                 else:
+                    # ENHANCED: Late Move Reduction
+                    reduction = 0
+                    if depth >= 3 and move_number > 5 and best_score > -self.win_score * 0.5:
+                        reduction = 1
+                        if move_number > 10:
+                            reduction = 2
+
                     score = self.minimax(
-                        (board, captures, new_hash), depth - 1, alpha, beta, False,
+                        (board, captures, new_hash), depth - 1 - reduction,
+                        alpha, beta, False,
                         current_score + delta, ai_player,
                         ordered_moves_func, make_move_func, undo_move_func,
                         is_legal_func, check_terminal_func
                     )
 
+                    # Re-search if LMR found a good move
+                    if reduction > 0 and score > alpha:
+                        score = self.minimax(
+                            (board, captures, new_hash), depth - 1,
+                            alpha, beta, False,
+                            current_score + delta, ai_player,
+                            ordered_moves_func, make_move_func, undo_move_func,
+                            is_legal_func, check_terminal_func
+                        )
+
                 # Undo move
                 undo_move_func(r, c, player, board, captured_pieces, old_cap_count, captures, zobrist_hash)
 
                 if self.time_limit_reached:
-                    return 0
+                    return current_score
 
                 best_score = max(best_score, score)
-                alpha = max(alpha, best_score)
+                if best_score > alpha:
+                    alpha = best_score
+                    flag = 'EXACT'
+
                 if beta <= alpha:
+                    # Store killer move
+                    if depth not in self.killer_moves:
+                        self.killer_moves[depth] = []
+                    self.killer_moves[depth].append((r, c))
+                    if len(self.killer_moves[depth]) > 2:
+                        self.killer_moves[depth].pop(0)
+
+                    flag = 'LOWERBOUND'
                     break
 
-            self.transposition_table[full_hash] = (best_score, depth)
+            self.transposition_table[full_hash] = (best_score, depth, flag)
             return best_score
 
         # Minimizing player
         else:
             best_score = math.inf
+            move_number = 0
+            flag = 'LOWERBOUND'  # Assume fail-high
+
             for (r, c) in ordered_moves:
                 is_legal, _ = is_legal_func(r, c, player, board)
                 if not is_legal:
                     continue
+
+                move_number += 1
 
                 # Make move and get delta
                 delta, captured_pieces, old_cap_count, new_hash = make_move_func(
@@ -261,24 +383,52 @@ class MinimaxAlgorithm:
                 if check_terminal_func(board, captures, player, r, c):
                     score = -self.win_score
                 else:
-                    # When minimizer moves, delta is subtracted from AI's perspective
+                    # ENHANCED: Late Move Reduction
+                    reduction = 0
+                    if depth >= 3 and move_number > 5 and best_score < self.win_score * 0.5:
+                        reduction = 1
+                        if move_number > 10:
+                            reduction = 2
+
                     score = self.minimax(
-                        (board, captures, new_hash), depth - 1, alpha, beta, True,
+                        (board, captures, new_hash), depth - 1 - reduction,
+                        alpha, beta, True,
                         current_score - delta, ai_player,
                         ordered_moves_func, make_move_func, undo_move_func,
                         is_legal_func, check_terminal_func
                     )
 
+                    # Re-search if LMR found a good move
+                    if reduction > 0 and score < beta:
+                        score = self.minimax(
+                            (board, captures, new_hash), depth - 1,
+                            alpha, beta, True,
+                            current_score - delta, ai_player,
+                            ordered_moves_func, make_move_func, undo_move_func,
+                            is_legal_func, check_terminal_func
+                        )
+
                 # Undo move
                 undo_move_func(r, c, player, board, captured_pieces, old_cap_count, captures, zobrist_hash)
 
                 if self.time_limit_reached:
-                    return 0
+                    return current_score
 
                 best_score = min(best_score, score)
-                beta = min(beta, best_score)
+                if best_score < beta:
+                    beta = best_score
+                    flag = 'EXACT'
+
                 if beta <= alpha:
+                    # Store killer move
+                    if depth not in self.killer_moves:
+                        self.killer_moves[depth] = []
+                    self.killer_moves[depth].append((r, c))
+                    if len(self.killer_moves[depth]) > 2:
+                        self.killer_moves[depth].pop(0)
+
+                    flag = 'UPPERBOUND'
                     break
 
-            self.transposition_table[full_hash] = (best_score, depth)
+            self.transposition_table[full_hash] = (best_score, depth, flag)
             return best_score
