@@ -5,7 +5,7 @@ Gomoku AI module that coordinates the algorithm and heuristic evaluation.
 import time
 
 from srcs.algorithm import MinimaxAlgorithm
-from srcs.heuristic import BROKEN_FOUR, CAPTURE_SCORE, OPEN_THREE, WIN_SCORE, HeuristicEvaluator
+from srcs.heuristic import HeuristicEvaluator
 
 
 class GomokuAI:
@@ -13,15 +13,31 @@ class GomokuAI:
     Manages AI decision-making, move generation, and evaluation.
     """
 
-    def __init__(self, board_size, max_depth, time_limit, relevance_range):
-        self.board_size = board_size
-        self.max_depth = max_depth
-        self.time_limit = time_limit
-        self.relevance_range = relevance_range
+    def __init__(self, config):
+        # Store configuration
+        self.config = config
 
-        # Initialize algorithm and heuristic
-        self.algorithm = MinimaxAlgorithm(max_depth, time_limit, WIN_SCORE)
-        self.heuristic = HeuristicEvaluator(board_size)
+        # Parse configuration sections
+        game_cfg = config["game_settings"]
+        algo_cfg = config["algorithm_settings"]
+        ai_cfg = config["ai_settings"]
+        heuristic_cfg = config["heuristic_settings"]
+
+        # Extract constants
+        self.board_size = game_cfg["board_size"]
+        self.max_depth = algo_cfg["max_depth"]
+        self.time_limit = algo_cfg["time_limit"]
+        self.relevance_range = ai_cfg["relevance_range"]
+
+        # Heuristic scores
+        self.WIN_SCORE = heuristic_cfg["scores"]["win_score"]
+        self.BROKEN_FOUR = heuristic_cfg["scores"]["broken_four"]
+        self.CAPTURE_SCORE = heuristic_cfg["scores"]["capture_score"]
+        self.OPEN_THREE = heuristic_cfg["scores"]["open_three"]
+
+        # Initialize algorithm and heuristic with config
+        self.algorithm = MinimaxAlgorithm(config)
+        self.heuristic = HeuristicEvaluator(config)
 
         # AI state
         self.ai_is_thinking = False
@@ -46,7 +62,8 @@ class GomokuAI:
         Returns:
             tuple: (best_move, time_taken)
         """
-        print(f"[{'Black' if ai_player == 1 else 'White'}] is thinking... (Move #{num_moves})")
+        turn_num = (num_moves + 2) // 2
+        print(f"[{'Black' if ai_player == 1 else 'White'}] is thinking... (Turn {turn_num}, Move #{num_moves + 1})")
 
         start_time = time.time()
 
@@ -132,8 +149,8 @@ class GomokuAI:
         old_capture_count = captures[player]
         new_capture_count = old_capture_count + len(captured_pieces)
         delta_my_captures = (
-            (new_capture_count // 2 * CAPTURE_SCORE) -
-            (old_capture_count // 2 * CAPTURE_SCORE)
+            (new_capture_count // 2 * self.CAPTURE_SCORE) -
+            (old_capture_count // 2 * self.CAPTURE_SCORE)
         )
 
         # Final delta: MyGains - OpponentGains (weighted)
@@ -177,24 +194,24 @@ class GomokuAI:
 
             # Add bonus for captures
             if my_capture_pairs > 0:
-                my_score += my_capture_pairs * CAPTURE_SCORE
+                my_score += my_capture_pairs * self.CAPTURE_SCORE
 
             # Check if this wins by captures
             if captures[player] + (my_capture_pairs * 2) >= win_by_captures * 2:
-                my_score = WIN_SCORE * 0.95
+                my_score = self.WIN_SCORE * 0.95
 
             # Check if opponent could win by captures (defensive)
             if captures[opponent] + (opp_capture_pairs * 2) >= win_by_captures * 2:
-                opp_score = WIN_SCORE * 0.95
+                opp_score = self.WIN_SCORE * 0.95
 
             # Categorize by threat level
-            if my_score >= WIN_SCORE * 0.5:
+            if my_score >= self.WIN_SCORE * 0.5:
                 winning_moves.append((my_score, (r, c)))
-            elif opp_score >= WIN_SCORE * 0.5:
+            elif opp_score >= self.WIN_SCORE * 0.5:
                 blocking_moves.append((opp_score, (r, c)))
-            elif my_score >= BROKEN_FOUR or opp_score >= BROKEN_FOUR:
+            elif my_score >= self.BROKEN_FOUR or opp_score >= self.BROKEN_FOUR:
                 high_priority.append((max(my_score, opp_score * 1.1), (r, c)))
-            elif my_score >= OPEN_THREE or opp_score >= OPEN_THREE:
+            elif my_score >= self.OPEN_THREE or opp_score >= self.OPEN_THREE:
                 mid_priority.append((max(my_score, opp_score * 1.1), (r, c)))
             else:
                 low_priority.append((my_score, (r, c)))

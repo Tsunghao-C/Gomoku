@@ -13,10 +13,24 @@ class MinimaxAlgorithm:
     Implements the minimax algorithm with various optimizations.
     """
 
-    def __init__(self, max_depth, time_limit, win_score):
-        self.max_depth = max_depth
-        self.time_limit = time_limit
-        self.win_score = win_score
+    def __init__(self, config):
+        # Extract algorithm settings from config
+        algo_cfg = config["algorithm_settings"]
+        heuristic_cfg = config["heuristic_settings"]
+
+        self.max_depth = algo_cfg["max_depth"]
+        self.time_limit = algo_cfg["time_limit"]
+        self.win_score = heuristic_cfg["scores"]["win_score"]
+
+        # Optimization flags
+        self.enable_null_move_pruning = algo_cfg.get("enable_null_move_pruning", True)
+        self.null_move_reduction = algo_cfg.get("null_move_reduction", 2)
+        self.enable_lmr = algo_cfg.get("enable_late_move_reductions", True)
+        self.lmr_threshold = algo_cfg.get("lmr_threshold", 4)
+        self.lmr_reduction = algo_cfg.get("lmr_reduction", 1)
+
+        # Adaptive starting depth settings
+        self.adaptive_cfg = algo_cfg.get("adaptive_starting_depth", {})
 
         # Transposition table for caching positions
         self.transposition_table = {}
@@ -75,14 +89,21 @@ class MinimaxAlgorithm:
 
         # ENHANCED: Adaptive starting depth based on game phase
         # Be conservative to ensure at least one depth completes within time limit
-        if num_moves < 8:
-            start_depth = 1  # Early game: explore thoroughly
-        elif num_moves < 15:
-            start_depth = 3  # Mid-early: moderately aggressive
-        elif num_moves < 25:
-            start_depth = 4  # Mid game: skip shallow depths
+        if self.adaptive_cfg.get("enable", True):
+            early_game_moves = self.adaptive_cfg.get("early_game_moves", 8)
+            mid_early_moves = self.adaptive_cfg.get("mid_early_moves", 15)
+            mid_game_moves = self.adaptive_cfg.get("mid_game_moves", 25)
+
+            if num_moves < early_game_moves:
+                start_depth = self.adaptive_cfg.get("early_game_depth", 1)
+            elif num_moves < mid_early_moves:
+                start_depth = self.adaptive_cfg.get("mid_early_depth", 3)
+            elif num_moves < mid_game_moves:
+                start_depth = self.adaptive_cfg.get("mid_game_depth", 4)
+            else:
+                start_depth = self.adaptive_cfg.get("late_game_depth", 5)
         else:
-            start_depth = 5  # Late game: focused search
+            start_depth = 1  # If adaptive disabled, always start from 1
 
         print(f"Starting iterative deepening from depth {start_depth}")
 

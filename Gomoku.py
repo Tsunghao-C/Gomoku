@@ -17,12 +17,47 @@ Features:
 - Double-three rule: Cannot create two open threes simultaneously
 """
 
+import json
+import os
+import sys
+
 from srcs.GomokuGame import GomokuGame
+
+
+def load_config(config_path="config.json"):
+    """
+    Load configuration from JSON file.
+
+    Args:
+        config_path: Path to the configuration file
+
+    Returns:
+        dict: Configuration dictionary
+    """
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        print(f"✓ Configuration loaded from {config_path}")
+        return config
+    except FileNotFoundError:
+        print(f"ERROR: Configuration file '{config_path}' not found!")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON in configuration file: {e}")
+        sys.exit(1)
 
 
 def main():
     """Entry point for the Gomoku game."""
-    game = GomokuGame()
+    # Get the directory where the script is located
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(script_dir, "config.json")
+
+    # Load configuration
+    config = load_config(config_path)
+
+    # Create and run game with configuration
+    game = GomokuGame(config)
     game.run_game()
 
 

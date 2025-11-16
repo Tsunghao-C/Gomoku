@@ -1,0 +1,108 @@
+{
+  "game_settings": {
+    "board_size": 15,
+    "win_by_captures": 5,
+    "empty": 0,
+    "black_player": 1,
+    "white_player": 2,
+    "default_game_mode": "P_VS_AI"
+  },
+  
+  "player_settings": {
+    "ai_player": 2,
+    "human_player": 1,
+    "starting_player": 1
+  },
+  
+  "algorithm_settings": {
+    "max_depth": 12,
+    "time_limit": 3.0,
+    "enable_iterative_deepening": true,
+    "enable_aspiration_windows": true,
+    "aspiration_window_delta": 500,
+    "enable_null_move_pruning": true,
+    "null_move_reduction": 2,
+    "enable_late_move_reductions": true,
+    "lmr_threshold": 4,
+    "lmr_reduction": 1,
+    "enable_killer_moves": true,
+    "killer_moves_per_depth": 2,
+    "adaptive_starting_depth": {
+      "enable": true,
+      "early_game_moves": 8,
+      "early_game_depth": 1,
+      "mid_early_moves": 15,
+      "mid_early_depth": 3,
+      "mid_game_moves": 25,
+      "mid_game_depth": 4,
+      "late_game_depth": 5
+    }
+  },
+  
+  "heuristic_settings": {
+    "scores": {
+      "win_score": 1000000000,
+      "pending_win_score": 50000000,
+      "open_four": 1000000,
+      "broken_four": 400000,
+      "closed_four": 50000,
+      "open_three": 10000,
+      "broken_three": 4000,
+      "closed_three": 5000,
+      "open_two": 100,
+      "closed_two": 10,
+      "capture_threat_open": 30000,
+      "capture_score": 2500,
+      "capture_setup_bridge": 1000
+    }
+  },
+  
+  "ai_settings": {
+    "relevance_range": 1,
+    "move_ordering": {
+      "enable_windowed_search": true,
+      "windowed_search_from_move": 10,
+      "bounding_box_margin": 2,
+      "adaptive_move_limits": {
+        "early_game_moves": 10,
+        "early_game_limit": 18,
+        "mid_game_moves": 25,
+        "mid_game_limit": 14,
+        "late_game_limit": 12
+      },
+      "priority_move_limits": {
+        "winning_moves": 5,
+        "blocking_moves": 6,
+        "high_priority_early": 6,
+        "high_priority_mid": 9,
+        "mid_priority_factor": 3
+      }
+    }
+  },
+  
+  "ui_settings": {
+    "window": {
+      "square_size": 40,
+      "margin": 40,
+      "bottom_bar_height": 40
+    },
+    "colors": {
+      "board": [240, 217, 181],
+      "black": [0, 0, 0],
+      "white": [255, 255, 255],
+      "grid": [0, 0, 0],
+      "text": [40, 40, 40],
+      "capture_bg": [220, 220, 220],
+      "illegal": [255, 0, 0, 150],
+      "highlight": [255, 255, 0]
+    },
+    "fonts": {
+      "main_font": "Inter",
+      "main_font_size": 24
+    },
+    "animation": {
+      "pulse_speed": 4
+    }
+  }
+}
+

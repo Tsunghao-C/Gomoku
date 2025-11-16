@@ -13,71 +13,89 @@ import pygame
 from srcs.GomokuAI import GomokuAI
 from srcs.utils import get_line_string
 
-# --- Constants ---
-BOARD_SIZE = 15
-SQUARE_SIZE = 40
-MARGIN = 40
-WIDTH = BOARD_SIZE * SQUARE_SIZE + 2 * MARGIN
-HEIGHT = BOARD_SIZE * SQUARE_SIZE + 2 * MARGIN + 40
-
-# Colors
-COLOR_BOARD = (240, 217, 181)
-COLOR_BLACK = (0, 0, 0)
-COLOR_WHITE = (255, 255, 255)
-COLOR_GRID = (0, 0, 0)
-COLOR_TEXT = (40, 40, 40)
-COLOR_CAPTURE_BG = (220, 220, 220)
-COLOR_ILLEGAL = (255, 0, 0, 150)
-COLOR_HIGHLIGHT = (255, 255, 0)
-
-# Players
-EMPTY = 0
-BLACK_PLAYER = 1
-WHITE_PLAYER = 2
-
-# AI Configuration
-AI_PLAYER = WHITE_PLAYER
-HUMAN_PLAYER = BLACK_PLAYER
-AI_MAX_DEPTH = 12  # Increased for deeper search
-AI_TIME_LIMIT = 3.0
-AI_RELEVANCE_RANGE = 1  # Reduced for better performance
-
 
 class GomokuGame:
     """
     Main class to manage the Gomoku game state and logic.
     """
 
-    def __init__(self):
+    def __init__(self, config):
+        # Store configuration
+        self.config = config
+
+        # Parse configuration sections
+        game_cfg = config["game_settings"]
+        player_cfg = config["player_settings"]
+        ui_cfg = config["ui_settings"]
+
+        # Game constants from config
+        self.BOARD_SIZE = game_cfg["board_size"]
+        self.EMPTY = game_cfg["empty"]
+        self.BLACK_PLAYER = game_cfg["black_player"]
+        self.WHITE_PLAYER = game_cfg["white_player"]
+        self.AI_PLAYER = player_cfg["ai_player"]
+        self.HUMAN_PLAYER = player_cfg["human_player"]
+        self.WIN_BY_CAPTURES = game_cfg["win_by_captures"]
+
+        # UI constants from config
+        self.SQUARE_SIZE = ui_cfg["window"]["square_size"]
+        self.MARGIN = ui_cfg["window"]["margin"]
+        self.BOTTOM_BAR_HEIGHT = ui_cfg["window"]["bottom_bar_height"]
+        self.WIDTH = self.BOARD_SIZE * self.SQUARE_SIZE + 2 * self.MARGIN
+        self.HEIGHT = (self.BOARD_SIZE * self.SQUARE_SIZE +
+                      2 * self.MARGIN + self.BOTTOM_BAR_HEIGHT)
+
+        # Colors from config
+        self.COLOR_BOARD = tuple(ui_cfg["colors"]["board"])
+        self.COLOR_BLACK = tuple(ui_cfg["colors"]["black"])
+        self.COLOR_WHITE = tuple(ui_cfg["colors"]["white"])
+        self.COLOR_GRID = tuple(ui_cfg["colors"]["grid"])
+        self.COLOR_TEXT = tuple(ui_cfg["colors"]["text"])
+        self.COLOR_CAPTURE_BG = tuple(ui_cfg["colors"]["capture_bg"])
+        self.COLOR_ILLEGAL = tuple(ui_cfg["colors"]["illegal"])
+        self.COLOR_HIGHLIGHT = tuple(ui_cfg["colors"]["highlight"])
+
+        # Animation settings
+        self.PULSE_SPEED = ui_cfg["animation"]["pulse_speed"]
+
+        # Initialize Pygame
         pygame.init()
+        algo_cfg = config["algorithm_settings"]
         pygame.display.set_caption(
-            f"Gomoku AI Project - Optimization 5 (Capture Threats @ {AI_MAX_DEPTH}d)"
+            f"Gomoku AI Project - Depth {algo_cfg['max_depth']} "
+            f"(Time: {algo_cfg['time_limit']}s)"
         )
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
-        self.font = pygame.font.SysFont("Inter", 24)
+        self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
+        self.font = pygame.font.SysFont(
+            ui_cfg["fonts"]["main_font"],
+            ui_cfg["fonts"]["main_font_size"]
+        )
 
         # Game mode
-        self.game_mode = "P_VS_AI"
+        self.game_mode = game_cfg["default_game_mode"]
 
         # Game state
-        self.board = [[EMPTY for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
-        self.current_player = BLACK_PLAYER
+        self.board = [[self.EMPTY for _ in range(self.BOARD_SIZE)]
+                     for _ in range(self.BOARD_SIZE)]
+        self.current_player = self.BLACK_PLAYER
         self.game_over = False
         self.winner = None
         self.last_move_time = 0.0
-        self.captures = {BLACK_PLAYER: 0, WHITE_PLAYER: 0}
-        self.WIN_BY_CAPTURES = 5
+        self.captures = {self.BLACK_PLAYER: 0, self.WHITE_PLAYER: 0}
         self.move_count = 0  # Track total moves for adaptive AI
 
         # Hover UI
         self.hover_pos = None
         self.hover_is_illegal = False
         self.illegal_reason = ""
-        self.illegal_surface = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
-        pygame.draw.line(self.illegal_surface, COLOR_ILLEGAL, (5, 5),
-                        (SQUARE_SIZE - 5, SQUARE_SIZE - 5), 4)
-        pygame.draw.line(self.illegal_surface, COLOR_ILLEGAL, (5, SQUARE_SIZE - 5),
-                        (SQUARE_SIZE - 5, 5), 4)
+        self.illegal_surface = pygame.Surface(
+            (self.SQUARE_SIZE, self.SQUARE_SIZE), pygame.SRCALPHA
+        )
+        pygame.draw.line(self.illegal_surface, self.COLOR_ILLEGAL, (5, 5),
+                        (self.SQUARE_SIZE - 5, self.SQUARE_SIZE - 5), 4)
+        pygame.draw.line(self.illegal_surface, self.COLOR_ILLEGAL,
+                        (5, self.SQUARE_SIZE - 5),
+                        (self.SQUARE_SIZE - 5, 5), 4)
 
         # Pending Win State
         self.game_state = "NORMAL"
@@ -91,13 +109,12 @@ class GomokuGame:
         self.init_zobrist()
 
         # AI
-        self.ai = GomokuAI(BOARD_SIZE, AI_MAX_DEPTH, AI_TIME_LIMIT, AI_RELEVANCE_RANGE)
+        self.ai = GomokuAI(config)
 
-        # Initialize with human's first move at center
-        self.board[7][7] = HUMAN_PLAYER
-        self.current_player = AI_PLAYER
+        # Start with empty board - human can place first move anywhere
+        self.current_player = self.HUMAN_PLAYER
         self.current_hash = self.compute_initial_hash()
-        self.move_count = 1  # Count the initial center move
+        self.move_count = 0  # No moves yet
 
     # ---
     # Zobrist Hashing
@@ -105,18 +122,18 @@ class GomokuGame:
 
     def init_zobrist(self):
         """Initializes the Zobrist hash table with random values."""
-        self.zobrist_table = [[[0] * 3 for _ in range(BOARD_SIZE)]
-                             for _ in range(BOARD_SIZE)]
-        for r in range(BOARD_SIZE):
-            for c in range(BOARD_SIZE):
-                for p in [EMPTY, BLACK_PLAYER, WHITE_PLAYER]:
+        self.zobrist_table = [[[0] * 3 for _ in range(self.BOARD_SIZE)]
+                             for _ in range(self.BOARD_SIZE)]
+        for r in range(self.BOARD_SIZE):
+            for c in range(self.BOARD_SIZE):
+                for p in [self.EMPTY, self.BLACK_PLAYER, self.WHITE_PLAYER]:
                     self.zobrist_table[r][c][p] = random.randint(0, 2**64 - 1)
 
     def compute_initial_hash(self):
         """Computes the initial Zobrist hash of the board."""
         h = 0
-        for r in range(BOARD_SIZE):
-            for c in range(BOARD_SIZE):
+        for r in range(self.BOARD_SIZE):
+            for c in range(self.BOARD_SIZE):
                 piece = self.board[r][c]
                 h ^= self.zobrist_table[r][c][piece]
         return h
@@ -132,7 +149,7 @@ class GomokuGame:
         while True:
             # AI's turn
             if (self.game_mode == "P_VS_AI" and
-                self.current_player == AI_PLAYER and
+                self.current_player == self.AI_PLAYER and
                 not self.game_over and
                 not self.ai.ai_is_thinking):
 
@@ -141,12 +158,12 @@ class GomokuGame:
 
             # Update pulsing highlight for pending win
             if self.game_state == "PENDING_WIN":
-                self.pulse_alpha = (math.sin(time.time() * 4) + 1) / 2 * 255
+                self.pulse_alpha = (math.sin(time.time() * self.PULSE_SPEED) + 1) / 2 * 255
 
             # Check if it's human's turn
             is_human_turn = (self.game_mode == "P_VS_P") or \
                            (self.game_mode == "P_VS_AI" and
-                            self.current_player == HUMAN_PLAYER)
+                            self.current_player == self.HUMAN_PLAYER)
 
             if not self.game_over and is_human_turn:
                 self.update_hover(pygame.mouse.get_pos())
@@ -184,11 +201,12 @@ class GomokuGame:
     def reset_game(self):
         """Resets the game to initial state."""
         print("--- Game Reset ---")
-        self.board = [[EMPTY for _ in range(BOARD_SIZE)] for _ in range(BOARD_SIZE)]
+        self.board = [[self.EMPTY for _ in range(self.BOARD_SIZE)]
+                     for _ in range(self.BOARD_SIZE)]
         self.game_over = False
         self.winner = None
         self.last_move_time = 0.0
-        self.captures = {BLACK_PLAYER: 0, WHITE_PLAYER: 0}
+        self.captures = {self.BLACK_PLAYER: 0, self.WHITE_PLAYER: 0}
         self.hover_pos = None
         self.hover_is_illegal = False
         self.illegal_reason = ""
@@ -199,21 +217,20 @@ class GomokuGame:
         self.ai.ai_is_thinking = False
         self.ai.algorithm.clear_transposition_table()
 
-        self.board[7][7] = HUMAN_PLAYER
-        self.current_player = AI_PLAYER
-        self.game_mode = "P_VS_AI"
+        self.current_player = self.HUMAN_PLAYER
+        self.game_mode = self.config["game_settings"]["default_game_mode"]
 
         self.current_hash = self.compute_initial_hash()
-        self.move_count = 1  # Reset to 1 (initial center move)
+        self.move_count = 0  # Reset to 0 (no initial move)
 
     def update_hover(self, pos):
         """Updates hover position and checks if move is legal."""
         x, y = pos
-        col = round((x - MARGIN - SQUARE_SIZE // 2) / SQUARE_SIZE)
-        row = round((y - MARGIN - SQUARE_SIZE // 2) / SQUARE_SIZE)
+        col = round((x - self.MARGIN - self.SQUARE_SIZE // 2) / self.SQUARE_SIZE)
+        row = round((y - self.MARGIN - self.SQUARE_SIZE // 2) / self.SQUARE_SIZE)
 
-        if 0 <= row < BOARD_SIZE and 0 <= col < BOARD_SIZE:
-            if self.board[row][col] == EMPTY:
+        if 0 <= row < self.BOARD_SIZE and 0 <= col < self.BOARD_SIZE:
+            if self.board[row][col] == self.EMPTY:
                 self.hover_pos = (row, col)
                 is_legal, reason = self.is_legal_move(row, col, self.current_player,
                                                       self.board)
@@ -246,11 +263,15 @@ class GomokuGame:
         """
         Handles a player's move, including captures, win checking, and state updates.
         """
-        player_name = "Black" if player == BLACK_PLAYER else "White"
-        opponent_player = WHITE_PLAYER if player == BLACK_PLAYER else BLACK_PLAYER
+        player_name = "Black" if player == self.BLACK_PLAYER else "White"
+        opponent_player = self.WHITE_PLAYER if player == self.BLACK_PLAYER else self.BLACK_PLAYER
 
+        # Calculate turn number (each player's move increments by 1, so turn = (move + 1) / 2)
+        turn_num = (self.move_count + 2) // 2
+        print(f"\n=== Turn {turn_num} ===")
         print(f"[{player_name}] moved to ({row}, {col})")
-        print(f"Move calculation time: {self.last_move_time:.6f} seconds")
+        if self.last_move_time > 0:
+            print(f"Move calculation time: {self.last_move_time:.6f} seconds")
 
         # Make the move
         captured_pieces, new_hash = self.make_move(row, col, player, self.board,
@@ -286,7 +307,7 @@ class GomokuGame:
             else:
                 self.game_over = True
                 self.winner = self.pending_win_player
-                pending_winner_name = "Black" if self.pending_win_player == BLACK_PLAYER else "White"
+                pending_winner_name = "Black" if self.pending_win_player == self.BLACK_PLAYER else "White"
                 print(f"--- Game Over! {player_name} failed to break the line.")
                 print(f"--- {pending_winner_name} wins by 5-in-a-row! ---")
                 return
@@ -302,7 +323,7 @@ class GomokuGame:
         # Switch player
         if not self.game_over:
             self.current_player = opponent_player
-            if self.game_mode == "P_VS_AI" and self.current_player == AI_PLAYER:
+            if self.game_mode == "P_VS_AI" and self.current_player == self.AI_PLAYER:
                 self.ai.ai_is_thinking = False
             self.hover_pos = None
             self.hover_is_illegal = False
@@ -314,7 +335,7 @@ class GomokuGame:
     def run_ai_move(self):
         """Runs the AI to get the best move."""
         best_move, time_taken = self.ai.get_best_move(
-            self.board, self.captures, self.current_hash, AI_PLAYER,
+            self.board, self.captures, self.current_hash, self.AI_PLAYER,
             self.WIN_BY_CAPTURES, self, self.move_count
         )
 
@@ -324,7 +345,7 @@ class GomokuGame:
             print("AI has no legal moves left!")
             return
 
-        self.handle_move(best_move[0], best_move[1], AI_PLAYER)
+        self.handle_move(best_move[0], best_move[1], self.AI_PLAYER)
 
     # ---
     # Game Logic Functions
@@ -335,11 +356,11 @@ class GomokuGame:
         Makes a move on the board and updates the Zobrist hash.
         Returns: (captured_pieces, new_zobrist_hash)
         """
-        if board[row][col] != EMPTY:
+        if board[row][col] != self.EMPTY:
             return [], zobrist_hash
 
         # Update hash for placing the piece
-        zobrist_hash ^= self.zobrist_table[row][col][EMPTY]
+        zobrist_hash ^= self.zobrist_table[row][col][self.EMPTY]
         board[row][col] = player
         zobrist_hash ^= self.zobrist_table[row][col][player]
 
@@ -348,31 +369,31 @@ class GomokuGame:
 
         # Update hash for captured pieces
         if captured_pieces:
-            opponent = WHITE_PLAYER if player == BLACK_PLAYER else BLACK_PLAYER
+            opponent = self.WHITE_PLAYER if player == self.BLACK_PLAYER else self.BLACK_PLAYER
             for (r_cap, c_cap) in captured_pieces:
                 zobrist_hash ^= self.zobrist_table[r_cap][c_cap][opponent]
-                zobrist_hash ^= self.zobrist_table[r_cap][c_cap][EMPTY]
+                zobrist_hash ^= self.zobrist_table[r_cap][c_cap][self.EMPTY]
 
         return captured_pieces, zobrist_hash
 
     def undo_move(self, r, c, player, board, captured_pieces, old_capture_count,
                  captures_dict, zobrist_hash):
         """Undoes a move on the board and restores the Zobrist hash."""
-        opponent = WHITE_PLAYER if player == BLACK_PLAYER else BLACK_PLAYER
+        opponent = self.WHITE_PLAYER if player == self.BLACK_PLAYER else self.BLACK_PLAYER
 
         # Restore captured pieces
         if captured_pieces:
             for (cr, cc) in captured_pieces:
                 board[cr][cc] = opponent
-                zobrist_hash ^= self.zobrist_table[cr][cc][EMPTY]
+                zobrist_hash ^= self.zobrist_table[cr][cc][self.EMPTY]
                 zobrist_hash ^= self.zobrist_table[cr][cc][opponent]
 
         captures_dict[player] = old_capture_count
 
         # Remove the piece
-        board[r][c] = EMPTY
+        board[r][c] = self.EMPTY
         zobrist_hash ^= self.zobrist_table[r][c][player]
-        zobrist_hash ^= self.zobrist_table[r][c][EMPTY]
+        zobrist_hash ^= self.zobrist_table[r][c][self.EMPTY]
 
         return zobrist_hash
 
@@ -381,7 +402,7 @@ class GomokuGame:
         Checks for captures after placing a piece and applies them.
         Returns: list of captured piece coordinates
         """
-        opponent = WHITE_PLAYER if player == BLACK_PLAYER else BLACK_PLAYER
+        opponent = self.WHITE_PLAYER if player == self.BLACK_PLAYER else self.BLACK_PLAYER
         all_captured = []
 
         for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1),
@@ -390,16 +411,16 @@ class GomokuGame:
             r2, c2 = last_row + 2 * dr, last_col + 2 * dc
             r3, c3 = last_row + 3 * dr, last_col + 3 * dc
 
-            if not (0 <= r1 < BOARD_SIZE and 0 <= c1 < BOARD_SIZE and
-                   0 <= r2 < BOARD_SIZE and 0 <= c2 < BOARD_SIZE and
-                   0 <= r3 < BOARD_SIZE and 0 <= c3 < BOARD_SIZE):
+            if not (0 <= r1 < self.BOARD_SIZE and 0 <= c1 < self.BOARD_SIZE and
+                   0 <= r2 < self.BOARD_SIZE and 0 <= c2 < self.BOARD_SIZE and
+                   0 <= r3 < self.BOARD_SIZE and 0 <= c3 < self.BOARD_SIZE):
                 continue
 
             if (board[r1][c1] == opponent and
                 board[r2][c2] == opponent and
                 board[r3][c3] == player):
-                board[r1][c1] = EMPTY
-                board[r2][c2] = EMPTY
+                board[r1][c1] = self.EMPTY
+                board[r2][c2] = self.EMPTY
                 all_captured.append((r1, c1))
                 all_captured.append((r2, c2))
 
@@ -417,7 +438,7 @@ class GomokuGame:
             # Check forward
             for i in range(1, 5):
                 r, c = last_row + dr * i, last_col + dc * i
-                if 0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE and board[r][c] == player:
+                if 0 <= r < self.BOARD_SIZE and 0 <= c < self.BOARD_SIZE and board[r][c] == player:
                     win_line.append((r, c))
                 else:
                     break
@@ -425,7 +446,7 @@ class GomokuGame:
             # Check backward
             for i in range(1, 5):
                 r, c = last_row - dr * i, last_col - dc * i
-                if 0 <= r < BOARD_SIZE and 0 <= c < BOARD_SIZE and board[r][c] == player:
+                if 0 <= r < self.BOARD_SIZE and 0 <= c < self.BOARD_SIZE and board[r][c] == player:
                     win_line.append((r, c))
                 else:
                     break
@@ -449,7 +470,7 @@ class GomokuGame:
         Checks if a move is legal (not occupied and doesn't create double-three).
         Returns: (is_legal, reason)
         """
-        if board[row][col] != EMPTY:
+        if board[row][col] != self.EMPTY:
             return (False, "Occupied")
 
         # Use a copy to check for double-three
@@ -470,10 +491,10 @@ class GomokuGame:
     def count_free_threes_at(self, r, c, player, board):
         """Counts the number of free threes created by placing a piece at (r,c)."""
         count = 0
-        opponent = WHITE_PLAYER if player == BLACK_PLAYER else BLACK_PLAYER
+        opponent = self.WHITE_PLAYER if player == self.BLACK_PLAYER else self.BLACK_PLAYER
 
         for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            line = get_line_string(r, c, dr, dc, board, player, opponent, BOARD_SIZE)
+            line = get_line_string(r, c, dr, dc, board, player, opponent, self.BOARD_SIZE)
 
             # Pattern: _OOO_ (EPPPE)
             idx = line.find('EPPPE')
@@ -514,111 +535,113 @@ class GomokuGame:
 
     def draw_board(self):
         """Draws the game board."""
-        self.screen.fill(COLOR_BOARD)
+        self.screen.fill(self.COLOR_BOARD)
 
         # Draw grid lines
-        for i in range(BOARD_SIZE):
-            start_pos_h = (MARGIN + SQUARE_SIZE // 2,
-                          MARGIN + SQUARE_SIZE // 2 + i * SQUARE_SIZE)
-            end_pos_h = (WIDTH - MARGIN - SQUARE_SIZE // 2,
-                        MARGIN + SQUARE_SIZE // 2 + i * SQUARE_SIZE)
-            pygame.draw.line(self.screen, COLOR_GRID, start_pos_h, end_pos_h, 1)
+        for i in range(self.BOARD_SIZE):
+            start_pos_h = (self.MARGIN + self.SQUARE_SIZE // 2,
+                          self.MARGIN + self.SQUARE_SIZE // 2 + i * self.SQUARE_SIZE)
+            end_pos_h = (self.WIDTH - self.MARGIN - self.SQUARE_SIZE // 2,
+                        self.MARGIN + self.SQUARE_SIZE // 2 + i * self.SQUARE_SIZE)
+            pygame.draw.line(self.screen, self.COLOR_GRID, start_pos_h, end_pos_h, 1)
 
             # Row labels
-            label = self.font.render(str(i), True, COLOR_TEXT)
-            self.screen.blit(label, (MARGIN - 30, MARGIN + SQUARE_SIZE // 2 +
-                                    i * SQUARE_SIZE - label.get_height() // 2))
+            label = self.font.render(str(i), True, self.COLOR_TEXT)
+            self.screen.blit(label, (self.MARGIN - 30, self.MARGIN + self.SQUARE_SIZE // 2 +
+                                    i * self.SQUARE_SIZE - label.get_height() // 2))
 
-            start_pos_v = (MARGIN + SQUARE_SIZE // 2 + i * SQUARE_SIZE,
-                          MARGIN + SQUARE_SIZE // 2)
-            end_pos_v = (MARGIN + SQUARE_SIZE // 2 + i * SQUARE_SIZE,
-                        HEIGHT - MARGIN - SQUARE_SIZE // 2 - 40)
-            pygame.draw.line(self.screen, COLOR_GRID, start_pos_v, end_pos_v, 1)
+            start_pos_v = (self.MARGIN + self.SQUARE_SIZE // 2 + i * self.SQUARE_SIZE,
+                          self.MARGIN + self.SQUARE_SIZE // 2)
+            end_pos_v = (self.MARGIN + self.SQUARE_SIZE // 2 + i * self.SQUARE_SIZE,
+                        self.HEIGHT - self.MARGIN - self.SQUARE_SIZE // 2 - self.BOTTOM_BAR_HEIGHT)
+            pygame.draw.line(self.screen, self.COLOR_GRID, start_pos_v, end_pos_v, 1)
 
             # Column labels
-            label = self.font.render(chr(ord('A') + i), True, COLOR_TEXT)
-            self.screen.blit(label, (MARGIN + SQUARE_SIZE // 2 + i * SQUARE_SIZE -
-                                    label.get_width() // 2, MARGIN - 30))
+            label = self.font.render(chr(ord('A') + i), True, self.COLOR_TEXT)
+            self.screen.blit(label, (self.MARGIN + self.SQUARE_SIZE // 2 + i * self.SQUARE_SIZE -
+                                    label.get_width() // 2, self.MARGIN - 30))
 
         # Draw star points
         star_points = [(3, 3), (3, 11), (11, 3), (11, 11), (7, 7)]
         for r, c in star_points:
-            cx = MARGIN + SQUARE_SIZE // 2 + c * SQUARE_SIZE
-            cy = MARGIN + SQUARE_SIZE // 2 + r * SQUARE_SIZE
-            pygame.draw.circle(self.screen, COLOR_GRID, (cx, cy), 5)
+            cx = self.MARGIN + self.SQUARE_SIZE // 2 + c * self.SQUARE_SIZE
+            cy = self.MARGIN + self.SQUARE_SIZE // 2 + r * self.SQUARE_SIZE
+            pygame.draw.circle(self.screen, self.COLOR_GRID, (cx, cy), 5)
 
         # Draw capture display background
-        pygame.draw.rect(self.screen, COLOR_CAPTURE_BG, (0, HEIGHT - 40, WIDTH, 40))
+        pygame.draw.rect(self.screen, self.COLOR_CAPTURE_BG,
+                        (0, self.HEIGHT - self.BOTTOM_BAR_HEIGHT, self.WIDTH, self.BOTTOM_BAR_HEIGHT))
 
     def draw_pieces(self):
         """Draws the pieces on the board."""
-        for r in range(BOARD_SIZE):
-            for c in range(BOARD_SIZE):
+        for r in range(self.BOARD_SIZE):
+            for c in range(self.BOARD_SIZE):
                 player = self.board[r][c]
-                if player != EMPTY:
-                    cx = MARGIN + SQUARE_SIZE // 2 + c * SQUARE_SIZE
-                    cy = MARGIN + SQUARE_SIZE // 2 + r * SQUARE_SIZE
-                    radius = SQUARE_SIZE // 2 - 3
-                    color = COLOR_BLACK if player == BLACK_PLAYER else COLOR_WHITE
+                if player != self.EMPTY:
+                    cx = self.MARGIN + self.SQUARE_SIZE // 2 + c * self.SQUARE_SIZE
+                    cy = self.MARGIN + self.SQUARE_SIZE // 2 + r * self.SQUARE_SIZE
+                    radius = self.SQUARE_SIZE // 2 - 3
+                    color = self.COLOR_BLACK if player == self.BLACK_PLAYER else self.COLOR_WHITE
                     pygame.draw.circle(self.screen, color, (cx, cy), radius)
-                    if player == WHITE_PLAYER:
-                        pygame.draw.circle(self.screen, COLOR_BLACK, (cx, cy), radius, 1)
+                    if player == self.WHITE_PLAYER:
+                        pygame.draw.circle(self.screen, self.COLOR_BLACK, (cx, cy), radius, 1)
 
     def draw_highlights(self):
         """Draws highlights for pending win line."""
         if self.game_state != "PENDING_WIN":
             return
 
-        highlight_surface = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
-        color = (*COLOR_HIGHLIGHT, int(self.pulse_alpha))
-        radius = SQUARE_SIZE // 2 - 1
+        highlight_surface = pygame.Surface((self.SQUARE_SIZE, self.SQUARE_SIZE), pygame.SRCALPHA)
+        color = (*self.COLOR_HIGHLIGHT, int(self.pulse_alpha))
+        radius = self.SQUARE_SIZE // 2 - 1
         pygame.draw.circle(highlight_surface, color,
-                          (SQUARE_SIZE // 2, SQUARE_SIZE // 2), radius, 3)
+                          (self.SQUARE_SIZE // 2, self.SQUARE_SIZE // 2), radius, 3)
 
         for r, c in self.pending_win_line:
-            cx = MARGIN + SQUARE_SIZE // 2 + c * SQUARE_SIZE
-            cy = MARGIN + SQUARE_SIZE // 2 + r * SQUARE_SIZE
+            cx = self.MARGIN + self.SQUARE_SIZE // 2 + c * self.SQUARE_SIZE
+            cy = self.MARGIN + self.SQUARE_SIZE // 2 + r * self.SQUARE_SIZE
             self.screen.blit(highlight_surface,
-                           (cx - SQUARE_SIZE // 2, cy - SQUARE_SIZE // 2))
+                           (cx - self.SQUARE_SIZE // 2, cy - self.SQUARE_SIZE // 2))
 
     def draw_status(self):
         """Draws the status message at the top."""
         if self.game_over:
-            winner_name = "Black" if self.winner == BLACK_PLAYER else "White"
+            winner_name = "Black" if self.winner == self.BLACK_PLAYER else "White"
             message = f"Game Over! {winner_name} wins! (Press 'R' to Reset)"
             color = (180, 0, 0)
 
         elif self.game_state == "PENDING_WIN":
-            pending_winner_name = "Black" if self.pending_win_player == BLACK_PLAYER else "White"
-            opponent_name = "Black" if self.current_player == BLACK_PLAYER else "White"
+            pending_winner_name = "Black" if self.pending_win_player == self.BLACK_PLAYER else "White"
+            opponent_name = "Black" if self.current_player == self.BLACK_PLAYER else "White"
             message = f"PENDING WIN for {pending_winner_name}! {opponent_name} must capture the line!"
             color = (200, 150, 0)
 
-        elif (self.game_mode == "P_VS_AI" and self.current_player == AI_PLAYER):
-            message = f"AI is thinking... (Depth: {self.ai.algorithm.current_depth} / {AI_MAX_DEPTH})"
+        elif (self.game_mode == "P_VS_AI" and self.current_player == self.AI_PLAYER):
+            max_depth = self.config["algorithm_settings"]["max_depth"]
+            message = f"AI is thinking... (Depth: {self.ai.algorithm.current_depth} / {max_depth})"
             color = (0, 0, 180)
 
         else:
-            player_name = "Black" if self.current_player == BLACK_PLAYER else "White"
+            player_name = "Black" if self.current_player == self.BLACK_PLAYER else "White"
             message = f"{player_name}'s Turn (Mode: {self.game_mode} - 'M' to toggle)"
-            color = COLOR_BLACK if self.current_player == BLACK_PLAYER else COLOR_TEXT
+            color = self.COLOR_BLACK if self.current_player == self.BLACK_PLAYER else self.COLOR_TEXT
 
         status_text = self.font.render(message, True, color)
-        text_rect = status_text.get_rect(center=(WIDTH // 2, MARGIN // 2))
+        text_rect = status_text.get_rect(center=(self.WIDTH // 2, self.MARGIN // 2))
         self.screen.blit(status_text, text_rect)
 
     def draw_captures(self):
         """Draws the capture count at the bottom."""
         black_cap_text = self.font.render(
-            f"Black Captures: {self.captures[BLACK_PLAYER]}", True, COLOR_BLACK
+            f"Black Captures: {self.captures[self.BLACK_PLAYER]}", True, self.COLOR_BLACK
         )
-        self.screen.blit(black_cap_text, (MARGIN, HEIGHT - 35))
+        self.screen.blit(black_cap_text, (self.MARGIN, self.HEIGHT - 35))
 
         white_cap_text = self.font.render(
-            f"White Captures: {self.captures[WHITE_PLAYER]}", True, COLOR_BLACK
+            f"White Captures: {self.captures[self.WHITE_PLAYER]}", True, self.COLOR_BLACK
         )
-        text_rect = white_cap_text.get_rect(right=WIDTH - MARGIN)
-        self.screen.blit(white_cap_text, (text_rect.x, HEIGHT - 35))
+        text_rect = white_cap_text.get_rect(right=self.WIDTH - self.MARGIN)
+        self.screen.blit(white_cap_text, (text_rect.x, self.HEIGHT - 35))
 
     def draw_hover(self):
         """Draws the hover indicator."""
@@ -626,19 +649,19 @@ class GomokuGame:
             return
 
         r, c = self.hover_pos
-        cx = MARGIN + SQUARE_SIZE // 2 + c * SQUARE_SIZE
-        cy = MARGIN + SQUARE_SIZE // 2 + r * SQUARE_SIZE
+        cx = self.MARGIN + self.SQUARE_SIZE // 2 + c * self.SQUARE_SIZE
+        cy = self.MARGIN + self.SQUARE_SIZE // 2 + r * self.SQUARE_SIZE
 
         if self.hover_is_illegal:
             self.screen.blit(self.illegal_surface,
-                           (cx - SQUARE_SIZE // 2, cy - SQUARE_SIZE // 2))
+                           (cx - self.SQUARE_SIZE // 2, cy - self.SQUARE_SIZE // 2))
         else:
-            radius = SQUARE_SIZE // 2 - 3
+            radius = self.SQUARE_SIZE // 2 - 3
             temp_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
-            color = (*COLOR_BLACK, 100) if self.current_player == BLACK_PLAYER else (*COLOR_WHITE, 100)
+            color = (*self.COLOR_BLACK, 100) if self.current_player == self.BLACK_PLAYER else (*self.COLOR_WHITE, 100)
             pygame.draw.circle(temp_surface, color, (radius, radius), radius)
-            if self.current_player == WHITE_PLAYER:
-                pygame.draw.circle(temp_surface, (*COLOR_BLACK, 100),
+            if self.current_player == self.WHITE_PLAYER:
+                pygame.draw.circle(temp_surface, (*self.COLOR_BLACK, 100),
                                  (radius, radius), radius, 1)
             self.screen.blit(temp_surface, (cx - radius, cy - radius))
 

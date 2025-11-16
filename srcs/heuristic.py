@@ -3,29 +3,34 @@ Heuristic evaluation module for Gomoku AI.
 Contains all scoring constants and pattern recognition functions.
 """
 
-# --- Heuristic Score Constants ---
-WIN_SCORE = 1000000000
-PENDING_WIN_SCORE = 50000000
-OPEN_FOUR = 1000000  # _OOOO_
-BROKEN_FOUR = 400000  # _OO_OO_ or _O_OOO_
-CLOSED_FOUR = 50000  # XOOOO_
-OPEN_THREE = 10000  # _OOO_
-BROKEN_THREE = 4000  # _O_OO_
-CLOSED_THREE = 5000  # XOOO_
-OPEN_TWO = 100  # _OO_
-CLOSED_TWO = 10  # XOO_
-CAPTURE_THREAT_OPEN = 30000  # (E.g., P O O E)
-CAPTURE_SCORE = 2500  # Score per pair (so *2)
-CAPTURE_SETUP_BRIDGE = 1000  # (E.g., P O E P)
-
 
 class HeuristicEvaluator:
     """
     Evaluates board positions using pattern recognition and scoring.
     """
 
-    def __init__(self, board_size):
-        self.board_size = board_size
+    def __init__(self, config):
+        # Extract settings from config
+        game_cfg = config["game_settings"]
+        heuristic_cfg = config["heuristic_settings"]
+        scores = heuristic_cfg["scores"]
+
+        self.board_size = game_cfg["board_size"]
+
+        # Load all heuristic scores from config
+        self.WIN_SCORE = scores["win_score"]
+        self.PENDING_WIN_SCORE = scores["pending_win_score"]
+        self.OPEN_FOUR = scores["open_four"]
+        self.BROKEN_FOUR = scores["broken_four"]
+        self.CLOSED_FOUR = scores["closed_four"]
+        self.OPEN_THREE = scores["open_three"]
+        self.BROKEN_THREE = scores["broken_three"]
+        self.CLOSED_THREE = scores["closed_three"]
+        self.OPEN_TWO = scores["open_two"]
+        self.CLOSED_TWO = scores["closed_two"]
+        self.CAPTURE_THREAT_OPEN = scores["capture_threat_open"]
+        self.CAPTURE_SCORE = scores["capture_score"]
+        self.CAPTURE_SETUP_BRIDGE = scores["capture_setup_bridge"]
 
     def score_line_string(self, line):
         """
@@ -36,67 +41,67 @@ class HeuristicEvaluator:
 
         # --- 5-in-a-row (Win) ---
         if "PPPPP" in line:
-            return PENDING_WIN_SCORE
+            return self.PENDING_WIN_SCORE
 
         # --- Open Fours (1,000,000) ---
         if "EPPPPE" in line:
-            score += OPEN_FOUR
+            score += self.OPEN_FOUR
 
         # --- Broken Fours (400,000) ---
         # Pattern: 4 pieces with one gap (creates forcing threats)
         if "EPEPPPE" in line or "EPPPEPE" in line:  # _O_OOO_ or _OOO_O_
-            score += BROKEN_FOUR
+            score += self.BROKEN_FOUR
         if "EPPEPPE" in line:  # _OO_OO_
-            score += BROKEN_FOUR
+            score += self.BROKEN_FOUR
 
         # --- Closed Fours (50,000) ---
         if ("XPPPPE" in line or "EPPPPX" in line or
             "OPPPPE" in line or "EPPPPO" in line):
-            score += CLOSED_FOUR
+            score += self.CLOSED_FOUR
 
         # --- Capture Threats (30,000) ---
         if "POOE" in line or "EOOP" in line:
-            score += CAPTURE_THREAT_OPEN
+            score += self.CAPTURE_THREAT_OPEN
 
         # --- Open Threes (10,000) ---
         if "EPPPE" in line:  # _OOO_
-            score += OPEN_THREE
+            score += self.OPEN_THREE
         if "EPPEP" in line:  # _O_OO
-            score += OPEN_THREE
+            score += self.OPEN_THREE
         if "EPEPP" in line:  # _OO_O
-            score += OPEN_THREE
+            score += self.OPEN_THREE
 
         # --- Closed Threes (5,000) ---
         # Three consecutive pieces, one end blocked
         if ("XPPPE" in line or "EPPPX" in line or
             "OPPPE" in line or "EPPPO" in line):
-            score += CLOSED_THREE
+            score += self.CLOSED_THREE
         # Three pieces with one gap, one end blocked
         if ("XPPEP" in line or "EPEPX" in line or
             "OPPEP" in line or "EPEPO" in line):
-            score += CLOSED_THREE
+            score += self.CLOSED_THREE
 
         # --- Broken Threes (4,000) ---
         # Pattern: 3 pieces with gaps between them
         if "EPEPEPE" in line:  # _O_O_O_
-            score += BROKEN_THREE
+            score += self.BROKEN_THREE
         if "EPEEPPE" in line or "EPPEEPE" in line:  # _O__OO_ or _OO__O_
-            score += BROKEN_THREE
+            score += self.BROKEN_THREE
 
         # --- Capture Setups (1,000) ---
         if "POEP" in line:
-            score += CAPTURE_SETUP_BRIDGE
+            score += self.CAPTURE_SETUP_BRIDGE
 
         # --- Open Twos (100) ---
         if "EPPE" in line:  # _OO_
-            score += OPEN_TWO
+            score += self.OPEN_TWO
         if "EPEP" in line:  # _O_O_
-            score += OPEN_TWO
+            score += self.OPEN_TWO
 
         # --- Closed Twos (10) ---
         if ("XPPE" in line or "EPPX" in line or
             "OPPE" in line or "EPPO" in line):
-            score += CLOSED_TWO
+            score += self.CLOSED_TWO
 
         return score
 
@@ -123,9 +128,9 @@ class HeuristicEvaluator:
         opponent = 2 if player == 1 else 1
 
         if captures[player] >= (win_by_captures * 2):
-            return WIN_SCORE
+            return self.WIN_SCORE
 
-        score += (captures[player] // 2) * CAPTURE_SCORE
+        score += (captures[player] // 2) * self.CAPTURE_SCORE
 
         lines_seen = set()
         for r in range(self.board_size):
