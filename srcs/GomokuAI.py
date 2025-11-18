@@ -35,6 +35,13 @@ class GomokuAI:
         self.CAPTURE_SCORE = heuristic_cfg["scores"]["capture_score"]
         self.OPEN_THREE = heuristic_cfg["scores"]["open_three"]
 
+        # Debug settings
+        debug_cfg = ai_cfg.get("debug", {})
+        self.debug_verbose = debug_cfg.get("verbose", False)
+        self.debug_critical_moves = debug_cfg.get("show_critical_moves", False)
+        self.debug_move_scores = debug_cfg.get("show_move_scores", False)
+        self.debug_move_categories = debug_cfg.get("show_move_categories", False)
+
         # Initialize algorithm and heuristic with config
         self.algorithm = MinimaxAlgorithm(config)
         self.heuristic = HeuristicEvaluator(config)
@@ -113,7 +120,8 @@ class GomokuAI:
         self.last_depth_reached = depth_reached
         self.current_search_depth = 0
 
-        print(f"Search completed: depth={depth_reached}, time={time_taken:.2f}s")
+        if self.debug_verbose:
+            print(f"Search completed: depth={depth_reached}, time={time_taken:.2f}s")
 
         return best_move, time_taken
 
@@ -158,13 +166,98 @@ class GomokuAI:
 
         return delta, captured_pieces, old_capture_count, new_hash
 
+    def _find_critical_moves(self, board, player):
+        """
+        Find critical moves: positions that complete or block 4-in-a-row.
+        These moves MUST always be considered regardless of windowing.
+
+        Returns:
+            tuple: (winning_positions, blocking_positions)
+        """
+        winning_positions = set()
+        blocking_positions = set()
+
+        directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+
+        for r in range(self.board_size):
+            for c in range(self.board_size):
+                if board[r][c] == 0:
+                    continue
+
+                current_player = board[r][c]
+
+                # Check all 4 directions for potential 4-in-a-row
+                for dr, dc in directions:
+                    count = 1
+                    empty_positions = []
+
+                    # Look forward: count consecutive stones, note first empty
+                    nr, nc = r + dr, c + dc
+                    found_empty_forward = False
+                    for _ in range(4):
+                        if not (0 <= nr < self.board_size and 0 <= nc < self.board_size):
+                            break
+                        if board[nr][nc] == current_player:
+                            count += 1
+                        elif board[nr][nc] == 0 and not found_empty_forward:
+                            # Only add the FIRST empty square (adjacent to the run)
+                            empty_positions.append((nr, nc))
+                            found_empty_forward = True
+                            break  # Stop after first empty
+                        else:
+                            break  # Hit opponent or second empty
+                        nr += dr
+                        nc += dc
+
+                    # Look backward: count consecutive stones, note first empty
+                    nr, nc = r - dr, c - dc
+                    found_empty_backward = False
+                    for _ in range(4):
+                        if not (0 <= nr < self.board_size and 0 <= nc < self.board_size):
+                            break
+                        if board[nr][nc] == current_player:
+                            count += 1
+                        elif board[nr][nc] == 0 and not found_empty_backward:
+                            # Only add the FIRST empty square (adjacent to the run)
+                            empty_positions.append((nr, nc))
+                            found_empty_backward = True
+                            break  # Stop after first empty
+                        else:
+                            break  # Hit opponent or second empty
+                        nr -= dr
+                        nc -= dc
+
+                    # If 4 in a row with at least 1 empty spot, ALL empties are critical
+                    # This handles:
+                    # - O-X-X-X-X-E (1 empty, blocked on one side)
+                    # - E-X-X-X-X-E (2 empties, open on both sides - BOTH are critical!)
+                    if count == 4 and len(empty_positions) >= 1:
+                        for critical_pos in empty_positions:
+                            if current_player == player:
+                                winning_positions.add(critical_pos)
+                            else:
+                                blocking_positions.add(critical_pos)
+
+        return list(winning_positions), list(blocking_positions)
+
     def get_ordered_moves(self, board, captures, player, game_logic, num_moves):
         """
         Gets moves ordered by their local score (for move ordering optimization).
-        ENHANCED: Uses capture simulation and adaptive move limits.
+        ENHANCED: Uses capture simulation, adaptive move limits, and critical move detection.
         """
         opponent = 2 if player == 1 else 1
         win_by_captures = 5  # Standard Gomoku rule
+
+        # CRITICAL: Always find moves that complete or block 4-in-a-row
+        winning_positions, blocking_positions = self._find_critical_moves(board, player)
+
+        # DEBUG: Show critical moves found
+        if self.debug_critical_moves and (winning_positions or blocking_positions):
+            print(f"  🔍 Critical moves for player {player}:")
+            if winning_positions:
+                print(f"    Winning: {winning_positions}")
+            if blocking_positions:
+                print(f"    Blocking: {blocking_positions}")
 
         # Tier 1: Immediate threats (check first)
         winning_moves = []
@@ -179,46 +272,62 @@ class GomokuAI:
         # ENHANCED: Use windowed move generation for better performance
         legal_moves = self.get_relevant_moves_windowed(board, num_moves)
 
+        # CRITICAL: Add critical moves to ensure they're ALWAYS evaluated
+        critical_moves = set(winning_positions + blocking_positions)
+        legal_moves_set = set(legal_moves)
+        legal_moves_set.update(critical_moves)
+        legal_moves = list(legal_moves_set)
+
         for (r, c) in legal_moves:
             is_legal, _ = game_logic.is_legal_move(r, c, player, board)
             if not is_legal:
                 continue
 
-            # Evaluate the move - vulnerability is now handled in heuristic
+            # Evaluate MY score: place MY stone and evaluate
             board[r][c] = player
-            captured_pieces = game_logic.check_and_apply_captures(r, c, player, board)
-
-            # ENHANCED: Evaluate WITH capture simulation
+            captured_pieces_mine = game_logic.check_and_apply_captures(r, c, player, board)
             my_score, my_capture_pairs = self._evaluate_with_captures(
                 r, c, player, board
             )
+            if my_capture_pairs > 0:
+                my_score += my_capture_pairs * self.CAPTURE_SCORE
+            if captures[player] + len(captured_pieces_mine) >= win_by_captures * 2:
+                my_score = self.WIN_SCORE * 0.95
+
+            # Undo MY move
+            game_logic.undo_move(r, c, player, board, captured_pieces_mine,
+                               captures[player], captures,
+                               game_logic.current_hash)
+
+            # Evaluate OPPONENT's score: place OPPONENT's stone and evaluate
+            board[r][c] = opponent
+            captured_pieces_opp = game_logic.check_and_apply_captures(r, c, opponent, board)
             opp_score, opp_capture_pairs = self._evaluate_with_captures(
                 r, c, opponent, board
             )
-
-            # Add bonus for captures
-            if my_capture_pairs > 0:
-                my_score += my_capture_pairs * self.CAPTURE_SCORE
-
-            # Check if this wins by captures
-            if captures[player] + len(captured_pieces) >= win_by_captures * 2:
-                my_score = self.WIN_SCORE * 0.95
-
-            # Check if opponent could win by captures (defensive)
-            # Note: This checks if opponent could win on THEIR next move
-            if captures[opponent] + (opp_capture_pairs * 2) >= win_by_captures * 2:
+            if opp_capture_pairs > 0:
+                opp_score += opp_capture_pairs * self.CAPTURE_SCORE
+            if captures[opponent] + len(captured_pieces_opp) >= win_by_captures * 2:
                 opp_score = self.WIN_SCORE * 0.95
 
-            # Undo the temporary move
-            game_logic.undo_move(r, c, player, board, captured_pieces,
-                               captures[player], captures,
+            # Undo OPPONENT's move
+            game_logic.undo_move(r, c, opponent, board, captured_pieces_opp,
+                               captures[opponent], captures,
                                game_logic.current_hash)
+
+            # DEBUG: Show scoring for critical moves
+            if self.debug_move_scores and (r, c) in critical_moves:
+                print(f"    Critical move ({r},{c}): my_score={my_score:.0f}, opp_score={opp_score:.0f}")
 
             # Categorize by threat level (vulnerability already in scores)
             if my_score >= self.WIN_SCORE * 0.5:
                 winning_moves.append((my_score, (r, c)))
             elif opp_score >= self.WIN_SCORE * 0.5:
                 blocking_moves.append((opp_score, (r, c)))
+            elif (r, c) in blocking_positions:
+                # CRITICAL: Moves detected as blocking 4-in-a-row MUST be treated as blocking
+                # Even if score < WIN_SCORE*0.5 (which is very high threshold)
+                blocking_moves.append((max(opp_score, self.BROKEN_FOUR), (r, c)))
             elif my_score >= self.BROKEN_FOUR or opp_score >= self.BROKEN_FOUR:
                 high_priority.append((max(my_score, opp_score * 1.1), (r, c)))
             elif my_score >= self.OPEN_THREE or opp_score >= self.OPEN_THREE:
@@ -242,6 +351,8 @@ class GomokuAI:
             # Must block, but also consider our threats
             result = [move for score, move in blocking_moves[:6]]
             result.extend([move for score, move in high_priority[:6]])
+            if self.debug_move_categories:
+                print(f"  📋 Returning {len(blocking_moves)} blocking moves (showing first 6): {[move for score, move in blocking_moves[:6]]}")
             return result[:12]
 
         # Adaptive max moves based on game phase
@@ -256,6 +367,8 @@ class GomokuAI:
         result = []
         result.extend([move for score, move in high_priority[:max_moves // 2]])
         result.extend([move for score, move in mid_priority[:max_moves // 3]])
+        if self.debug_move_categories:
+            print(f"  📋 No blocking moves. Returning {len(high_priority)} high + {len(mid_priority)} mid priority")
 
         # Always include some low priority moves if we don't have enough
         if len(result) < max_moves // 2:
@@ -394,6 +507,27 @@ class GomokuAI:
         Original implementation for early game.
         """
         relevant_moves = set()
+
+        # Special case: empty board (first move)
+        # Return center and nearby positions
+        board_has_pieces = False
+        for r in range(self.board_size):
+            for c in range(self.board_size):
+                if board[r][c] != 0:
+                    board_has_pieces = True
+                    break
+            if board_has_pieces:
+                break
+
+        if not board_has_pieces:
+            # Return center region for first move
+            center = self.board_size // 2
+            for r in range(max(0, center - 2), min(self.board_size, center + 3)):
+                for c in range(max(0, center - 2), min(self.board_size, center + 3)):
+                    relevant_moves.add((r, c))
+            return list(relevant_moves)
+
+        # Normal case: find moves around existing pieces
         for r in range(self.board_size):
             for c in range(self.board_size):
                 if board[r][c] != 0:

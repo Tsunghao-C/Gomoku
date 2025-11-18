@@ -28,7 +28,8 @@
     "enable_killer_moves": true,
     "killer_moves_per_depth": 2,
     "adaptive_starting_depth": {
-      "enable": true,
+      "enable": false,
+      "note": "Currently disabled - always starts from depth 1 for consistency and better minimax behavior",
       "early_game_moves": 8,
       "early_game_depth": 1,
       "mid_early_moves": 15,
@@ -90,6 +91,13 @@
         "high_priority_mid": 9,
         "mid_priority_factor": 3
       }
+    },
+    "debug": {
+      "verbose": false,
+      "show_critical_moves": false,
+      "show_move_scores": false,
+      "show_move_categories": false,
+      "show_terminal_states": false
     }
   },
   

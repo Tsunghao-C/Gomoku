@@ -130,7 +130,9 @@ class HeuristicEvaluator:
         score = 0
         opponent = 2 if player == 1 else 1
 
+        # DEBUG: Check for win by captures
         if captures[player] >= (win_by_captures * 2):
+            print(f"  DEBUG: Player {player} has WIN_SCORE from captures: {captures[player]} >= {win_by_captures * 2}")
             return self.WIN_SCORE
 
         score += (captures[player] // 2) * self.CAPTURE_SCORE
@@ -146,7 +148,18 @@ class HeuristicEvaluator:
                         if line_key not in lines_seen:
                             lines_seen.add(line_key)
                             line_str_p = get_line_string(r, c, dr, dc, board, player, opponent, self.board_size)
-                            score += self.score_line_string(line_str_p)
+                            line_score = self.score_line_string(line_str_p)
+
+                            # DEBUG: Log if we found a huge score
+                            if line_score >= self.PENDING_WIN_SCORE:
+                                print(f"  DEBUG: Player {player} has large pattern score: {line_score} from line: {line_str_p}")
+
+                            score += line_score
+
+        # DEBUG: Log final score if it's WIN_SCORE level
+        if score >= self.WIN_SCORE * 0.9:
+            print(f"  DEBUG: Player {player} final score: {score}, captures: {captures[player]}")
+
         return score
 
     def evaluate_board(self, board, captures, player, win_by_captures):
@@ -164,7 +177,18 @@ class HeuristicEvaluator:
             board, captures, player, opponent, win_by_captures
         )
 
-        return my_score - (opponent_score * 1.1) - vulnerability_penalty
+        final_score = my_score - (opponent_score * 1.1) - vulnerability_penalty
+
+        # DEBUG: Log if returning WIN_SCORE level score
+        if abs(final_score) >= self.WIN_SCORE * 0.9:
+            print(f"  DEBUG evaluate_board for player {player}:")
+            print(f"    my_score: {my_score}")
+            print(f"    opponent_score: {opponent_score}")
+            print(f"    vulnerability_penalty: {vulnerability_penalty}")
+            print(f"    FINAL: {final_score}")
+            print(f"    Captures - Me: {captures[player]}, Opp: {captures[opponent]}")
+
+        return final_score
 
     def _calculate_position_vulnerability(self, board, captures, player, opponent, win_by_captures):
         """

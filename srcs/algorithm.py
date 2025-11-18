@@ -32,6 +32,12 @@ class MinimaxAlgorithm:
         # Adaptive starting depth settings
         self.adaptive_cfg = algo_cfg.get("adaptive_starting_depth", {})
 
+        # Debug settings
+        ai_cfg = config.get("ai_settings", {})
+        debug_cfg = ai_cfg.get("debug", {})
+        self.debug_verbose = debug_cfg.get("verbose", False)
+        self.debug_terminal_states = debug_cfg.get("show_terminal_states", False)
+
         # Transposition table for caching positions
         self.transposition_table = {}
 
@@ -87,23 +93,13 @@ class MinimaxAlgorithm:
         best_score_so_far = -math.inf
         depth_reached = 0
 
-        # ENHANCED: Adaptive starting depth based on game phase
-        # Be conservative to ensure at least one depth completes within time limit
-        if self.adaptive_cfg.get("enable", True):
-            early_game_moves = self.adaptive_cfg.get("early_game_moves", 8)
-            mid_early_moves = self.adaptive_cfg.get("mid_early_moves", 15)
-            mid_game_moves = self.adaptive_cfg.get("mid_game_moves", 25)
-
-            if num_moves < early_game_moves:
-                start_depth = self.adaptive_cfg.get("early_game_depth", 1)
-            elif num_moves < mid_early_moves:
-                start_depth = self.adaptive_cfg.get("mid_early_depth", 3)
-            elif num_moves < mid_game_moves:
-                start_depth = self.adaptive_cfg.get("mid_game_depth", 4)
-            else:
-                start_depth = self.adaptive_cfg.get("late_game_depth", 5)
-        else:
-            start_depth = 1  # If adaptive disabled, always start from 1
+        # Always start from depth 1 for consistency
+        # This ensures:
+        # 1. Transposition table is populated progressively
+        # 2. Move ordering improves iteratively
+        # 3. Minimax logic is consistent across all game phases
+        # 4. Easier to debug and understand search behavior
+        start_depth = 1
 
         print(f"Starting iterative deepening from depth {start_depth}")
 
@@ -148,10 +144,13 @@ class MinimaxAlgorithm:
             best_score_so_far = best_score_this_depth
             depth_reached = depth
 
-            print(f"Completed depth {depth}. Best move: {best_move_so_far}, Score: {best_score_so_far:.0f}")
+            if self.debug_verbose:
+                print(f"Completed depth {depth}. Best move: {best_move_so_far}, Score: {best_score_so_far:.0f}")
 
             if best_score_so_far >= self.win_score * 0.9:
-                print("Found a winning move. Stopping search.")
+                if self.debug_verbose:
+                    print(f"Found a winning move at depth {depth}. Score: {best_score_so_far:.0f}")
+                    print(f"  Move: {best_move_so_far}")
                 break
 
             if self.check_timeout():
@@ -204,7 +203,11 @@ class MinimaxAlgorithm:
             captures[ai_player] = old_cap_count + len(captured_pieces)
 
             # Check for immediate win
-            if check_terminal_func(board, captures, ai_player, r, c):
+            # At root level (maximizing), this IS an immediate win - game would end here
+            is_terminal = check_terminal_func(board, captures, ai_player, r, c)
+            if is_terminal:
+                print(f"  DEBUG minimax_root: Terminal state detected at move ({r}, {c})")
+                print(f"    Player: {ai_player}, Captures: {captures}")
                 score = self.win_score
             else:
                 # Recursive minimax call
@@ -329,7 +332,9 @@ class MinimaxAlgorithm:
                 )
                 captures[player] = old_cap_count + len(captured_pieces)
 
-                if check_terminal_func(board, captures, player, r, c):
+                is_terminal = check_terminal_func(board, captures, player, r, c)
+                if is_terminal:
+                    # Terminal state detected - this position wins the game
                     score = self.win_score
                 else:
                     # ENHANCED: Late Move Reduction
@@ -401,7 +406,8 @@ class MinimaxAlgorithm:
                 )
                 captures[player] = old_cap_count + len(captured_pieces)
 
-                if check_terminal_func(board, captures, player, r, c):
+                is_terminal = check_terminal_func(board, captures, player, r, c)
+                if is_terminal:
                     score = -self.win_score
                 else:
                     # ENHANCED: Late Move Reduction

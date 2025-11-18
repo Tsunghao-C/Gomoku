@@ -58,6 +58,12 @@ class GomokuGame:
         # Animation settings
         self.PULSE_SPEED = ui_cfg["animation"]["pulse_speed"]
 
+        # Debug settings
+        ai_cfg = config.get("ai_settings", {})
+        debug_cfg = ai_cfg.get("debug", {})
+        self.debug_verbose = debug_cfg.get("verbose", False)
+        self.debug_terminal_states = debug_cfg.get("show_terminal_states", False)
+
         # Initialize Pygame
         pygame.init()
         algo_cfg = config["algorithm_settings"]
@@ -459,10 +465,37 @@ class GomokuGame:
     def check_terminal_state(self, board, captures, player_who_just_moved, r, c,
                             win_by_captures):
         """Checks if the game has reached a terminal state (win condition)."""
+        # Check captures
         if captures[player_who_just_moved] >= (win_by_captures * 2):
+            if self.debug_terminal_states:
+                print(f"    DEBUG check_terminal_state: Player {player_who_just_moved} wins by captures!")
+                print(f"      Has {captures[player_who_just_moved]} >= {win_by_captures * 2} needed")
             return True
-        if self.check_win(r, c, player_who_just_moved, board) is not None:
+
+        # Check 5-in-a-row
+        win_result = self.check_win(r, c, player_who_just_moved, board)
+        if win_result is not None:
+            if self.debug_terminal_states:
+                print(f"    DEBUG check_terminal_state: Player {player_who_just_moved} wins by 5-in-a-row!")
+                print(f"      At position ({r}, {c})")
+                print(f"      Win line: {win_result}")
+                # Show board around that position (expanded range to see full line)
+                print(f"      Board at ({r}, {c}): {board[r][c]}")
+                for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+                    line_debug = []
+                    for i in range(-5, 6):  # Expand to see more positions
+                        nr, nc = r + i*dr, c + i*dc
+                        if 0 <= nr < self.BOARD_SIZE and 0 <= nc < self.BOARD_SIZE:
+                            val = board[nr][nc]
+                            marker = ""
+                            if (nr, nc) in [(pos[0], pos[1]) for pos in win_result]:
+                                marker = "*"  # Mark positions in win line
+                            line_debug.append(f"({nr},{nc})={val}{marker}")
+                        else:
+                            line_debug.append("X")
+                    print(f"      Direction ({dr},{dc}): {' '.join(line_debug)}")
             return True
+
         return False
 
     def is_legal_move(self, row, col, player, board):
