@@ -115,6 +115,9 @@ class GomokuGame:
         self.pending_win_line = []
         self.pulse_alpha = 0
 
+        # Suggested Move (for P_VS_P_SUGGESTED mode)
+        self.suggested_move = None
+
         # Zobrist Hashing
         # Managed by GomokuLogic
 
@@ -164,7 +167,23 @@ class GomokuGame:
                 not self.ai.ai_is_thinking):
 
                 self.ai.ai_is_thinking = True
+                # Force status update
+                self.draw_status()
+                pygame.display.flip()
                 self.run_ai_move()
+
+            # AI Suggestion (P_VS_P_SUGGESTED) - White Player
+            if (self.game_mode == "P_VS_P_SUGGESTED" and
+                self.current_player == self.WHITE_PLAYER and
+                not self.game_over and
+                self.suggested_move is None and
+                not self.ai.ai_is_thinking):
+
+                self.ai.ai_is_thinking = True
+                # Force status update
+                self.draw_status()
+                pygame.display.flip()
+                self.generate_suggestion()
 
             # Update pulsing highlight for pending win
             if self.game_state == "PENDING_WIN":
@@ -172,6 +191,7 @@ class GomokuGame:
 
             # Check if it's human's turn
             is_human_turn = (self.game_mode == "P_VS_P") or \
+                           (self.game_mode == "P_VS_P_SUGGESTED") or \
                            (self.game_mode == "P_VS_AI" and
                             self.current_player == self.HUMAN_PLAYER)
 
@@ -204,6 +224,7 @@ class GomokuGame:
             self.draw_board()
             self.draw_pieces()
             self.draw_highlights()
+            self.draw_suggestion()
             self.draw_status()
             self.draw_captures()
             self.draw_hover()
@@ -231,6 +252,7 @@ class GomokuGame:
         self.game_state = "NORMAL"
         self.pending_win_player = None
         self.pending_win_line = []
+        self.suggested_move = None
 
         self.ai.ai_is_thinking = False
         self.ai.algorithm.clear_transposition_table()
@@ -348,6 +370,10 @@ class GomokuGame:
             self.current_player = opponent_player
             if self.game_mode == "P_VS_AI" and self.current_player == self.AI_PLAYER:
                 self.ai.ai_is_thinking = False
+
+            # Reset suggestion for new turn
+            self.suggested_move = None
+
             self.hover_pos = None
             self.hover_is_illegal = False
 
@@ -369,6 +395,19 @@ class GomokuGame:
             return
 
         self.handle_move(best_move[0], best_move[1], self.AI_PLAYER)
+
+    def generate_suggestion(self):
+        """Calculates a move for suggestion but doesn't apply it."""
+        print("--- generating suggestion ---")
+        best_move, time_taken = self.ai.get_best_move(
+            self.board, self.captures, self.current_hash, self.WHITE_PLAYER,
+            self.WIN_BY_CAPTURES, self.logic, self.move_count
+        )
+
+        self.last_move_time = time_taken
+        self.suggested_move = best_move
+        self.ai.ai_is_thinking = False
+        print(f"Suggestion generated: {best_move}")
 
     # ---
     # Drawing Functions
@@ -445,6 +484,26 @@ class GomokuGame:
             self.screen.blit(highlight_surface,
                            (cx - self.SQUARE_SIZE // 2, cy - self.SQUARE_SIZE // 2))
 
+    def draw_suggestion(self):
+        """Draws the suggested move (ghost stone)."""
+        if self.suggested_move is None:
+            return
+
+        r, c = self.suggested_move
+        cx = self.MARGIN + self.SQUARE_SIZE // 2 + c * self.SQUARE_SIZE
+        cy = self.MARGIN + self.SQUARE_SIZE // 2 + r * self.SQUARE_SIZE
+
+        # Draw a semi-transparent white circle with a distinctive border
+        ghost_surface = pygame.Surface((self.SQUARE_SIZE, self.SQUARE_SIZE), pygame.SRCALPHA)
+        radius = self.SQUARE_SIZE // 2 - 3
+
+        # Semi-transparent white fill
+        pygame.draw.circle(ghost_surface, (*self.COLOR_WHITE, 128), (self.SQUARE_SIZE // 2, self.SQUARE_SIZE // 2), radius)
+        # Green border to indicate suggestion
+        pygame.draw.circle(ghost_surface, (0, 255, 0), (self.SQUARE_SIZE // 2, self.SQUARE_SIZE // 2), radius, 2)
+
+        self.screen.blit(ghost_surface, (cx - self.SQUARE_SIZE // 2, cy - self.SQUARE_SIZE // 2))
+
     def draw_status(self):
         """Draws the status message at the top."""
         if self.game_over:
@@ -462,6 +521,13 @@ class GomokuGame:
             max_depth = self.config["algorithm_settings"]["max_depth"]
             message = f"AI is thinking... (Depth: {self.ai.algorithm.current_depth} / {max_depth})"
             color = (0, 0, 180)
+
+        elif (self.game_mode == "P_VS_P_SUGGESTED" and
+              self.current_player == self.WHITE_PLAYER and
+              self.suggested_move is None):
+            max_depth = self.config["algorithm_settings"]["max_depth"]
+            message = f"AI is thinking for suggestion... (Depth: {self.ai.algorithm.current_depth} / {max_depth})"
+            color = (0, 100, 0)
 
         else:
             player_name = "Black" if self.current_player == self.BLACK_PLAYER else "White"
@@ -535,6 +601,7 @@ class GomokuGame:
         options = [
             ("Player vs AI", "P_VS_AI"),
             ("Player vs Player", "P_VS_P"),
+            ("PvP (Suggested)", "P_VS_P_SUGGESTED"),
             ("Quit", "QUIT")
         ]
 
