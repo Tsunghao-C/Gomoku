@@ -535,7 +535,8 @@ class GomokuGame:
             color = self.COLOR_BLACK if self.current_player == self.BLACK_PLAYER else self.COLOR_TEXT
 
         status_text = self.font.render(message, True, color)
-        text_rect = status_text.get_rect(center=(self.WIDTH // 2, self.MARGIN // 2))
+
+        text_rect = status_text.get_rect(center=(self.WIDTH // 2, self.HEIGHT - self.BOTTOM_BAR_HEIGHT - 15))
         self.screen.blit(status_text, text_rect)
 
     def draw_captures(self):
