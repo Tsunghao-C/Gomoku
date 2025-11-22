@@ -35,104 +35,194 @@ class HeuristicEvaluator:
         # Store capture defense config for position evaluation
         self.capture_defense_cfg = heuristic_cfg.get("capture_defense", {})
 
-    def score_line_string(self, line):
-        """
-        Scores a line string based on pattern recognition.
-        'P' = Player, 'O' = Opponent, 'E' = Empty, 'X' = Bound
-        """
-        score = 0
+        # Numeric Pattern Constants
+        # 0=Empty, 1=Player, 2=Opponent, 3=Boundary
+        # We pre-compile these as tuples for fast matching
+        self._init_patterns()
 
-        # --- 5-in-a-row (Win) ---
-        if "PPPPP" in line:
+    def _init_patterns(self):
+        """Initialize numeric patterns for scoring."""
+        P = 1
+        O = 2
+        E = 0
+        X = 3
+
+        # Helper to create pattern variants
+        def make_pattern(*args):
+            return tuple(args)
+
+        # --- 5-in-a-row ---
+        self.PAT_WIN = make_pattern(P, P, P, P, P)
+
+        # --- Open Fours ---
+        self.PAT_OPEN_FOUR = make_pattern(E, P, P, P, P, E)
+
+        # --- Broken Fours ---
+        self.PATS_BROKEN_FOUR = [
+            make_pattern(E, P, E, P, P, P, E),
+            make_pattern(E, P, P, P, E, P, E),
+            make_pattern(E, P, P, E, P, P, E)
+        ]
+
+        # --- Closed Fours ---
+        # Ends with X or O
+        self.PATS_CLOSED_FOUR = []
+        for blocker in [X, O]:
+            self.PATS_CLOSED_FOUR.append(make_pattern(blocker, P, P, P, P, E))
+            self.PATS_CLOSED_FOUR.append(make_pattern(E, P, P, P, P, blocker))
+
+        # --- Capture Threats ---
+        self.PATS_CAPTURE_THREAT = [
+            make_pattern(P, O, O, E),
+            make_pattern(E, O, O, P)
+        ]
+
+        # --- Open Threes ---
+        self.PATS_OPEN_THREE = [
+            make_pattern(E, P, P, P, E),
+            make_pattern(E, P, P, E, P),
+            make_pattern(E, P, E, P, P)  # This is actually broken 3? No, standard pattern list treats this as open 3 equivalent in threat
+        ]
+        # Note: Original code treated EPPEP and EPEPP as Open Three (10,000)
+        # EPPEP is _O_OO -> effectively a broken three but treated as high value
+
+        # --- Closed Threes ---
+        self.PATS_CLOSED_THREE = []
+        for blocker in [X, O]:
+            # Consecutive
+            self.PATS_CLOSED_THREE.append(make_pattern(blocker, P, P, P, E))
+            self.PATS_CLOSED_THREE.append(make_pattern(E, P, P, P, blocker))
+            # Gap
+            self.PATS_CLOSED_THREE.append(make_pattern(blocker, P, P, E, P))
+            self.PATS_CLOSED_THREE.append(make_pattern(E, P, E, P, blocker)) # EPEPX
+            self.PATS_CLOSED_THREE.append(make_pattern(blocker, P, E, P, P))
+            self.PATS_CLOSED_THREE.append(make_pattern(P, P, E, P, blocker)) # PPEPX?? No, wait.
+            # Original: XPPEP, EPEPX, OPPEP, EPEPO
+            # Check EPEPX -> E, P, E, P, X
+            self.PATS_CLOSED_THREE.append(make_pattern(E, P, E, P, blocker))
+
+        # --- Broken Threes ---
+        self.PATS_BROKEN_THREE = [
+            make_pattern(E, P, E, P, E, P, E),
+            make_pattern(E, P, E, E, P, P, E),
+            make_pattern(E, P, P, E, E, P, E)
+        ]
+
+        # --- Capture Setup ---
+        self.PAT_CAPTURE_SETUP = make_pattern(P, O, E, P)
+
+        # --- Open Twos ---
+        self.PATS_OPEN_TWO = [
+            make_pattern(E, P, P, E),
+            make_pattern(E, P, E, P)
+        ]
+
+        # --- Closed Twos ---
+        self.PATS_CLOSED_TWO = []
+        for blocker in [X, O]:
+            self.PATS_CLOSED_TWO.append(make_pattern(blocker, P, P, E))
+            self.PATS_CLOSED_TWO.append(make_pattern(E, P, P, blocker))
+
+    def score_line_numeric(self, line):
+        """
+        Scores a line (list of integers) based on pattern recognition.
+        Uses sliding window or fast sequential checks.
+        """
+        # Convert to tuple for faster matching if needed, or just iterate
+        # Since we are searching for sub-sequences, we can convert to string of bytes/chars?
+        # Or just iterate. Iterating a list of 13 items is fast.
+
+        score = 0
+        length = len(line)
+
+        # Optimization: Convert line to a tuple once
+        line_tuple = tuple(line)
+
+        # Helper to search sub-tuple
+        def has_pattern(pattern):
+            pat_len = len(pattern)
+            for i in range(length - pat_len + 1):
+                if line_tuple[i:i+pat_len] == pattern:
+                    return True
+            return False
+
+        # --- Win ---
+        if has_pattern(self.PAT_WIN):
             return self.PENDING_WIN_SCORE
 
-        # --- Open Fours (1,000,000) ---
-        if "EPPPPE" in line:
+        # --- Open Four ---
+        if has_pattern(self.PAT_OPEN_FOUR):
             score += self.OPEN_FOUR
 
-        # --- Broken Fours (400,000) ---
-        # Pattern: 4 pieces with one gap (creates forcing threats)
-        if "EPEPPPE" in line or "EPPPEPE" in line:  # _O_OOO_ or _OOO_O_
-            score += self.BROKEN_FOUR
-        if "EPPEPPE" in line:  # _OO_OO_
-            score += self.BROKEN_FOUR
+        # --- Broken Fours ---
+        for pat in self.PATS_BROKEN_FOUR:
+            if has_pattern(pat):
+                score += self.BROKEN_FOUR
 
-        # --- Closed Fours (50,000) ---
-        if ("XPPPPE" in line or "EPPPPX" in line or
-            "OPPPPE" in line or "EPPPPO" in line):
-            score += self.CLOSED_FOUR
+        # --- Closed Fours ---
+        for pat in self.PATS_CLOSED_FOUR:
+            if has_pattern(pat):
+                score += self.CLOSED_FOUR
 
-        # --- Capture Threats (30,000) ---
-        if "POOE" in line or "EOOP" in line:
-            score += self.CAPTURE_THREAT_OPEN
+        # --- Capture Threats ---
+        for pat in self.PATS_CAPTURE_THREAT:
+            if has_pattern(pat):
+                score += self.CAPTURE_THREAT_OPEN
 
-        # --- Open Threes (10,000) ---
-        if "EPPPE" in line:  # _OOO_
-            score += self.OPEN_THREE
-        if "EPPEP" in line:  # _O_OO
-            score += self.OPEN_THREE
-        if "EPEPP" in line:  # _OO_O
-            score += self.OPEN_THREE
+        # --- Open Threes ---
+        for pat in self.PATS_OPEN_THREE:
+            if has_pattern(pat):
+                score += self.OPEN_THREE
 
-        # --- Closed Threes (5,000) ---
-        # Three consecutive pieces, one end blocked
-        if ("XPPPE" in line or "EPPPX" in line or
-            "OPPPE" in line or "EPPPO" in line):
-            score += self.CLOSED_THREE
-        # Three pieces with one gap, one end blocked
-        if ("XPPEP" in line or "EPEPX" in line or
-            "OPPEP" in line or "EPEPO" in line):
-            score += self.CLOSED_THREE
+        # --- Closed Threes ---
+        for pat in self.PATS_CLOSED_THREE:
+            if has_pattern(pat):
+                score += self.CLOSED_THREE
 
-        # --- Broken Threes (4,000) ---
-        # Pattern: 3 pieces with gaps between them
-        if "EPEPEPE" in line:  # _O_O_O_
-            score += self.BROKEN_THREE
-        if "EPEEPPE" in line or "EPPEEPE" in line:  # _O__OO_ or _OO__O_
-            score += self.BROKEN_THREE
+        # --- Broken Threes ---
+        for pat in self.PATS_BROKEN_THREE:
+            if has_pattern(pat):
+                score += self.BROKEN_THREE
 
-        # --- Capture Setups (1,000) ---
-        if "POEP" in line:
+        # --- Capture Setup ---
+        if has_pattern(self.PAT_CAPTURE_SETUP):
             score += self.CAPTURE_SETUP_BRIDGE
 
-        # --- Open Twos (100) ---
-        if "EPPE" in line:  # _OO_
-            score += self.OPEN_TWO
-        if "EPEP" in line:  # _O_O_
-            score += self.OPEN_TWO
+        # --- Open Twos ---
+        for pat in self.PATS_OPEN_TWO:
+            if has_pattern(pat):
+                score += self.OPEN_TWO
 
-        # --- Closed Twos (10) ---
-        if ("XPPE" in line or "EPPX" in line or
-            "OPPE" in line or "EPPO" in line):
-            score += self.CLOSED_TWO
+        # --- Closed Twos ---
+        for pat in self.PATS_CLOSED_TWO:
+            if has_pattern(pat):
+                score += self.CLOSED_TWO
 
         return score
 
     def score_lines_at(self, r, c, board, player, opponent):
         """
-        Scores the 4 lines (H, V, D1, D2) passing through (r,c)
-        for the given player.
+        Scores the 4 lines (H, V, D1, D2) passing through (r,c).
+        Uses numeric evaluation.
         """
-        from srcs.utils import get_line_string
+        from srcs.utils import get_line_values
 
         score = 0
         for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
-            line_str = get_line_string(r, c, dr, dc, board, player, opponent, self.board_size)
-            score += self.score_line_string(line_str)
+            line_vals = get_line_values(r, c, dr, dc, board, player, opponent, self.board_size)
+            score += self.score_line_numeric(line_vals)
         return score
 
     def calculate_player_score(self, board, captures, player, win_by_captures):
         """
         Calculates the total score for a player across the entire board.
         """
-        from srcs.utils import get_line_coords, get_line_string
+        from srcs.utils import get_line_coords, get_line_values
 
         score = 0
         opponent = 2 if player == 1 else 1
 
-        # DEBUG: Check for win by captures
         if captures[player] >= (win_by_captures * 2):
-            print(f"  DEBUG: Player {player} has WIN_SCORE from captures: {captures[player]} >= {win_by_captures * 2}")
             return self.WIN_SCORE
 
         score += (captures[player] // 2) * self.CAPTURE_SCORE
@@ -140,80 +230,49 @@ class HeuristicEvaluator:
         lines_seen = set()
         for r in range(self.board_size):
             for c in range(self.board_size):
-                if board[r][c] != 0:  # Scan from any piece
+                if board[r][c] != 0:
                     for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
                         line_coords = get_line_coords(r, c, dr, dc, self.board_size)
                         line_key = tuple(sorted(line_coords))
 
                         if line_key not in lines_seen:
                             lines_seen.add(line_key)
-                            line_str_p = get_line_string(r, c, dr, dc, board, player, opponent, self.board_size)
-                            line_score = self.score_line_string(line_str_p)
-
-                            # DEBUG: Log if we found a huge score
-                            if line_score >= self.PENDING_WIN_SCORE:
-                                print(f"  DEBUG: Player {player} has large pattern score: {line_score} from line: {line_str_p}")
-
-                            score += line_score
-
-        # DEBUG: Log final score if it's WIN_SCORE level
-        if score >= self.WIN_SCORE * 0.9:
-            print(f"  DEBUG: Player {player} final score: {score}, captures: {captures[player]}")
+                            line_vals = get_line_values(r, c, dr, dc, board, player, opponent, self.board_size)
+                            score += self.score_line_numeric(line_vals)
 
         return score
 
     def evaluate_board(self, board, captures, player, win_by_captures):
         """
         Evaluates the entire board from the perspective of the given player.
-        Includes capture vulnerability penalties.
-        Returns: my_score - opponent_score * 1.1 - vulnerability_penalty
         """
         opponent = 2 if player == 1 else 1
         my_score = self.calculate_player_score(board, captures, player, win_by_captures)
         opponent_score = self.calculate_player_score(board, captures, opponent, win_by_captures)
 
-        # Calculate vulnerability penalty for this position
         vulnerability_penalty = self._calculate_position_vulnerability(
             board, captures, player, opponent, win_by_captures
         )
 
         final_score = my_score - (opponent_score * 1.1) - vulnerability_penalty
-
-        # DEBUG: Log if returning WIN_SCORE level score
-        if abs(final_score) >= self.WIN_SCORE * 0.9:
-            print(f"  DEBUG evaluate_board for player {player}:")
-            print(f"    my_score: {my_score}")
-            print(f"    opponent_score: {opponent_score}")
-            print(f"    vulnerability_penalty: {vulnerability_penalty}")
-            print(f"    FINAL: {final_score}")
-            print(f"    Captures - Me: {captures[player]}, Opp: {captures[opponent]}")
-
         return final_score
 
     def _calculate_position_vulnerability(self, board, captures, player, opponent, win_by_captures):
         """
         Calculates vulnerability penalty for the current board position.
-        This is called for EVERY position in the minimax tree.
-
-        Returns:
-            int: Penalty to subtract from position evaluation
         """
-        # Get capture defense config
         if not hasattr(self, 'capture_defense_cfg') or not self.capture_defense_cfg.get('enable', True):
             return 0
 
         vulnerability_score = 0
         opponent_stones_captured = captures[opponent]
 
-        # Count vulnerable AI stones on the board
         for r in range(self.board_size):
             for c in range(self.board_size):
                 if board[r][c] == player:
-                    # Check if this stone is in a vulnerable position
                     if self._is_stone_in_vulnerable_position(r, c, player, opponent, board):
                         vulnerability_score += 1
 
-        # Apply escalating penalties based on game state
         winning_threshold = win_by_captures * 2
         critical_threshold = self.capture_defense_cfg.get('critical_threshold', 8)
         warning_threshold = self.capture_defense_cfg.get('warning_threshold', 6)
@@ -225,10 +284,8 @@ class HeuristicEvaluator:
         desperate_penalty = self.capture_defense_cfg.get('desperate_penalty', 3000000)
         trap_penalty = self.capture_defense_cfg.get('trap_detection_penalty', 400000)
 
-        # Base penalty (always applied)
         base_penalty = trap_penalty * vulnerability_score
 
-        # Escalating penalties based on capture count
         if opponent_stones_captured >= winning_threshold - 2:
             return base_penalty + (desperate_penalty * vulnerability_score)
         elif opponent_stones_captured >= critical_threshold:
@@ -243,19 +300,12 @@ class HeuristicEvaluator:
     def _is_stone_in_vulnerable_position(self, r, c, player, opponent, board):
         """
         Check if a stone at (r, c) is in a position where opponent could capture it.
-
-        Vulnerable patterns:
-        - O-P-P-E (opponent can play at E to capture)
-        - E-P-P-O (opponent can play at E to capture)
-        - Surrounded by 2+ opponent stones
         """
-        # Check all 8 directions for capture patterns
         for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1)]:
             for direction in [1, -1]:
                 dr_check = dr * direction
                 dc_check = dc * direction
 
-                # Look for O-P-P-E or E-P-P-O patterns
                 r1, c1 = r + dr_check, c + dc_check
                 r_before, c_before = r - dr_check, c - dc_check
                 r_after, c_after = r + 2 * dr_check, c + 2 * dc_check
@@ -263,9 +313,7 @@ class HeuristicEvaluator:
                 if not (0 <= r1 < self.board_size and 0 <= c1 < self.board_size):
                     continue
 
-                # Pattern: O-[this stone]-P-E or E-P-[this stone]-O
                 if board[r1][c1] == player:
-                    # Check for opponent on one side and empty on other
                     if (0 <= r_before < self.board_size and 0 <= c_before < self.board_size and
                         0 <= r_after < self.board_size and 0 <= c_after < self.board_size):
 

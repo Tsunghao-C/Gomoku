@@ -3,10 +3,10 @@ Core game logic for Gomoku.
 Encapsulates board state, rules, move validation, and win conditions.
 """
 
-import copy
 import random
 
-from srcs.utils import get_line_string
+# Remove 'copy' import as we remove deepcopy usage
+from srcs.utils import get_line_values
 
 
 class GomokuLogic:
@@ -44,12 +44,6 @@ class GomokuLogic:
 
     def init_zobrist(self):
         """Initializes the Zobrist hash table with random values."""
-        # Use fixed seed for reproducibility across runs if desired,
-        # but GomokuGame used random.randint without seed and Headless used seed 42.
-        # We'll stick to random.randint but maybe seed it if strictly needed.
-        # Headless sets seed 42, let's respect that if we want consistent tests.
-        # However, for normal play random is fine.
-
         self.zobrist_table = [[[0] * 3 for _ in range(self.BOARD_SIZE)]
                              for _ in range(self.BOARD_SIZE)]
         for r in range(self.BOARD_SIZE):
@@ -159,6 +153,7 @@ class GomokuLogic:
         """
         Checks if a move is legal (not occupied and doesn't create double-three).
         Returns: (is_legal, reason)
+        OPTIMIZED: Removes copy.deepcopy usage.
         """
         if not (0 <= row < self.BOARD_SIZE and 0 <= col < self.BOARD_SIZE):
              return (False, "Out of bounds")
@@ -166,18 +161,36 @@ class GomokuLogic:
         if board[row][col] != self.EMPTY:
             return (False, "Occupied")
 
-        # Use a copy to check for double-three
-        # Note: deeply copying board can be slow. Ideally we'd just set/unset,
-        # but count_free_threes_at might be complex.
-        board_copy = copy.deepcopy(board)
+        # OPTIMIZATION: Simulate move without deepcopy
+        opponent = self.WHITE_PLAYER if player == self.BLACK_PLAYER else self.BLACK_PLAYER
 
-        # Check captures from this position (captures might affect free threes?)
-        # The original code did check_and_apply_captures on the copy first.
-        captured_pieces = self.check_and_apply_captures(row, col, player, board_copy) # noqa: F841
-        board_copy[row][col] = player
+        # 1. Temporarily apply captures
+        # We need to know what pieces WOULD be captured to check the board state for double threes.
+        # Instead of actually removing them, check_and_apply_captures removes them.
+        # So we must save what was removed to restore it.
 
-        # Check for double-threes
-        free_threes_count = self.count_free_threes_at(row, col, player, board_copy)
+        # Ideally, we'd have a check_captures_only method, but let's just use the existing one
+        # and revert changes. But wait, check_and_apply_captures modifies the board!
+        # If we pass 'board', it modifies the REAL board if called from game loop,
+        # or the search board if called from AI.
+        # Here we are just checking legality.
+
+        # Temporarily place stone
+        board[row][col] = player
+
+        # Apply captures (modifies board)
+        captured_pieces = self.check_and_apply_captures(row, col, player, board)
+
+        # Check for double-threes on this modified board
+        free_threes_count = self.count_free_threes_at(row, col, player, board)
+
+        # RESTORE BOARD STATE
+        # 1. Restore captured pieces
+        for (r_cap, c_cap) in captured_pieces:
+            board[r_cap][c_cap] = opponent
+
+        # 2. Remove placed stone
+        board[row][col] = self.EMPTY
 
         if free_threes_count >= 2:
             return (False, "Illegal (Double-Three)")
@@ -185,43 +198,57 @@ class GomokuLogic:
         return (True, "Legal")
 
     def count_free_threes_at(self, r, c, player, board):
-        """Counts the number of free threes created by placing a piece at (r,c)."""
+        """
+        Counts the number of free threes created by placing a piece at (r,c).
+        OPTIMIZED: Uses numeric evaluation instead of strings.
+        """
         count = 0
         opponent = self.WHITE_PLAYER if player == self.BLACK_PLAYER else self.BLACK_PLAYER
 
+        # We map board values directly to these (assuming logic matches constants)
+        # 1 = Player (P), 2 = Opponent (O), 0 = Empty (E)
+
         for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            line = get_line_string(r, c, dr, dc, board, player, opponent, self.BOARD_SIZE)
+            # Get numeric line values (radius 6 is enough for length 5 patterns)
+            # center is at index 6
+            line = get_line_values(r, c, dr, dc, board, player, opponent, self.BOARD_SIZE)
 
-            # Pattern: _OOO_ (EPPPE)
-            idx = line.find('EPPPE')
             found_this_axis = False
-            while idx != -1:
-                if idx <= 15 < (idx + 5):
-                    count += 1
-                    found_this_axis = True
-                    break
-                idx = line.find('EPPPE', idx + 1)
+
+            # Check EPPPE (0, 1, 1, 1, 0)
+            for i in range(9): # 0 to 8
+                # Check if pattern matches
+                if (line[i] == 0 and line[i+1] == 1 and line[i+2] == 1 and
+                    line[i+3] == 1 and line[i+4] == 0):
+
+                    # Check if center (index 6) is part of the 3 Ps (indices i+1, i+2, i+3)
+                    if i+1 <= 6 <= i+3:
+                        count += 1
+                        found_this_axis = True
+                        break
+
             if found_this_axis:
                 continue
 
-            # Pattern: _O_OO_ (EPPEP)
-            idx = line.find('EPPEP')
-            while idx != -1:
-                if idx <= 15 < (idx + 5):
-                    count += 1
-                    found_this_axis = True
-                    break
-                idx = line.find('EPPEP', idx + 1)
+            # Check EPPEP (0, 1, 0, 1, 1)
+            for i in range(9):
+                if (line[i] == 0 and line[i+1] == 1 and line[i+2] == 0 and
+                    line[i+3] == 1 and line[i+4] == 1):
+                     # Ps are at i+1, i+3, i+4
+                    if (i+1 == 6 or i+3 == 6 or i+4 == 6):
+                        count += 1
+                        found_this_axis = True
+                        break
             if found_this_axis:
                 continue
 
-            # Pattern: _OO_O_ (EPEPP)
-            idx = line.find('EPEPP')
-            while idx != -1:
-                if idx <= 15 < (idx + 5):
-                    count += 1
-                    break
-                idx = line.find('EPEPP', idx + 1)
+            # Check EPEPP (0, 1, 1, 0, 1)
+            for i in range(9):
+                if (line[i] == 0 and line[i+1] == 1 and line[i+2] == 1 and
+                    line[i+3] == 0 and line[i+4] == 1):
+                    if (i+1 == 6 or i+2 == 6 or i+4 == 6):
+                        count += 1
+                        break
 
         return count
 
