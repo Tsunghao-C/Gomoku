@@ -16,10 +16,10 @@
   
   "algorithm_settings": {
     "max_depth": 12,
-    "time_limit": 3.0,
+    "time_limit": 0.5,
     "enable_iterative_deepening": true,
     "enable_aspiration_windows": true,
-    "aspiration_window_delta": 500,
+    "aspiration_window_delta": 500000,
     "enable_null_move_pruning": true,
     "null_move_reduction": 2,
     "enable_late_move_reductions": true,

@@ -22,6 +22,9 @@ class MinimaxAlgorithm:
         self.time_limit = algo_cfg["time_limit"]
         self.win_score = heuristic_cfg["scores"]["win_score"]
 
+        # Aspiration Window
+        self.aspiration_delta = algo_cfg.get("aspiration_window_delta", 50000)
+
         # Optimization flags
         self.enable_null_move_pruning = algo_cfg.get("enable_null_move_pruning", True)
         self.null_move_reduction = algo_cfg.get("null_move_reduction", 2)
@@ -49,10 +52,24 @@ class MinimaxAlgorithm:
         # Killer moves heuristic
         self.killer_moves = {}  # {depth: [(r1,c1), (r2,c2)]}
 
+        # History Heuristic
+        # Stores score for moves that caused a beta cutoff
+        # Key: (r, c), Value: score
+        self.history_table = {}
+
     def clear_transposition_table(self):
         """Clears the transposition table."""
         self.transposition_table.clear()
         self.killer_moves.clear()
+        # We usually keep history table between moves?
+        # Or clear it? Some engines clear, some decay.
+        # For simplicity and to adapt to new board state, let's clear or decay.
+        # Let's clear for now to be safe against stale history.
+        self.history_table.clear()
+
+    def get_history_score(self, r, c):
+        """Gets the history score for a move."""
+        return self.history_table.get((r, c), 0)
 
     def reset_search_state(self):
         """Resets the search state for a new move."""
@@ -109,7 +126,7 @@ class MinimaxAlgorithm:
             # Use aspiration windows for depths after the first
             if depth > start_depth and best_score_so_far != -math.inf:
                 # Narrow window around previous score
-                window = 50000
+                window = self.aspiration_delta
                 alpha = best_score_so_far - window
                 beta = best_score_so_far + window
 
@@ -381,6 +398,10 @@ class MinimaxAlgorithm:
                     if len(self.killer_moves[depth]) > 2:
                         self.killer_moves[depth].pop(0)
 
+                    # Update History Heuristic
+                    # Bonus proportional to depth squared (deeper cutoffs are more valuable)
+                    self.history_table[(r, c)] = self.history_table.get((r, c), 0) + depth * depth
+
                     flag = 'LOWERBOUND'
                     break
 
@@ -453,6 +474,9 @@ class MinimaxAlgorithm:
                     self.killer_moves[depth].append((r, c))
                     if len(self.killer_moves[depth]) > 2:
                         self.killer_moves[depth].pop(0)
+
+                    # Update History Heuristic
+                    self.history_table[(r, c)] = self.history_table.get((r, c), 0) + depth * depth
 
                     flag = 'UPPERBOUND'
                     break

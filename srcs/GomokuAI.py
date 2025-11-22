@@ -315,6 +315,14 @@ class GomokuAI:
             # Attack score + Blocking score (weighted) + Capture bonus
             total_score = score_attack + score_defend + capture_score
 
+            # History Heuristic Bonus
+            # Add history score as a tie-breaker/bias for good moves
+            history_score = self.algorithm.get_history_score(r, c)
+            if history_score > 0:
+                # Cap impact to avoid overshadowing tactical scores (like threats)
+                # But allow it to differentiate equal tactical moves
+                total_score += min(history_score, 5000)
+
             # Categorize
             if (r, c) in winning_positions:
                 winning_moves.append((total_score, (r, c)))
@@ -362,62 +370,109 @@ class GomokuAI:
 
         return result[:max_moves]
 
-    def get_bounding_box(self, board, padding=3):
+    def get_piece_clusters(self, board, separation_dist=4):
         """
-        Find the minimal rectangle containing all pieces, plus padding.
-        Returns: (min_row, max_row, min_col, max_col)
+        Identifies clusters of pieces to form multiple bounding boxes.
+        Returns list of (min_r, max_r, min_c, max_c) tuples.
         """
-        min_r, max_r = self.board_size, -1
-        min_c, max_c = self.board_size, -1
-
+        pieces = []
         for r in range(self.board_size):
             for c in range(self.board_size):
-                idx = r * self.board_size + c
-                if board[idx] != 0:
-                    min_r = min(min_r, r)
-                    max_r = max(max_r, r)
-                    min_c = min(min_c, c)
-                    max_c = max(max_c, c)
+                if board[r * self.board_size + c] != 0:
+                    pieces.append((r, c))
 
-        # Add padding
-        min_r = max(0, min_r - padding)
-        max_r = min(self.board_size - 1, max_r + padding)
-        min_c = max(0, min_c - padding)
-        max_c = min(self.board_size - 1, max_c + padding)
+        if not pieces:
+            return []
 
-        return (min_r, max_r, min_c, max_c)
+        # Simple clustering
+        clusters = []
+        unvisited = set(pieces)
+
+        while unvisited:
+            # Start a new cluster
+            start_node = unvisited.pop()
+            cluster = {start_node}
+            queue = [start_node]
+
+            # BFS to find connected components within separation_dist
+            while queue:
+                r, c = queue.pop(0)
+
+                # Find neighbors in unvisited
+                # Optimization: if unvisited is large, this is O(N^2).
+                # But N (stones) <= 361. Usually < 50 in early game.
+                # For 361 stones, simple loop is fine.
+                to_remove = []
+                for target in unvisited:
+                    tr, tc = target
+                    if abs(tr - r) <= separation_dist and abs(tc - c) <= separation_dist:
+                        cluster.add(target)
+                        queue.append(target)
+                        to_remove.append(target)
+
+                for item in to_remove:
+                    unvisited.remove(item)
+
+            # Calculate bbox for this cluster
+            min_r = min(p[0] for p in cluster)
+            max_r = max(p[0] for p in cluster)
+            min_c = min(p[1] for p in cluster)
+            max_c = max(p[1] for p in cluster)
+            clusters.append((min_r, max_r, min_c, max_c))
+
+        return clusters
 
     def get_relevant_moves_windowed(self, board, num_moves):
         """
-        Optimized move generation using bounding box.
-        Uses adaptive strategy based on game phase.
+        Optimized move generation using multiple bounding boxes (windows).
+        Satisfies the requirement for "multiple rectangular windows".
         """
         relevant_moves = set()
 
-        # Early game (< 12 moves): Use full board with small radius
-        if num_moves < 12:
+        # Early game (< 6 moves): Use standard neighbor search
+        if num_moves < 6:
             return self.get_relevant_moves(board)
 
-        # Mid-late game: Use bounding box for efficiency
-        padding = 3 if num_moves < 25 else 2
-        min_r, max_r, min_c, max_c = self.get_bounding_box(board, padding)
+        # Get multiple windows based on clusters
+        # Separation distance ensures we don't merge far-apart groups
+        # Padding adds space for 5-in-a-row development
+        clusters = self.get_piece_clusters(board, separation_dist=4)
+        padding = 2
 
-        # Only scan within bounding box
-        for r in range(min_r, max_r + 1):
-            for c in range(min_c, max_c + 1):
-                idx = r * self.board_size + c
-                if board[idx] != 0:
-                    # Add empty squares around pieces
-                    for dr in range(-self.relevance_range, self.relevance_range + 1):
-                        for dc in range(-self.relevance_range, self.relevance_range + 1):
-                            if dr == 0 and dc == 0:
-                                continue
-                            nr, nc = r + dr, c + dc
-                            if (min_r <= nr <= max_r and
-                                min_c <= nc <= max_c):
-                                n_idx = nr * self.board_size + nc
-                                if board[n_idx] == 0:
-                                    relevant_moves.add((nr, nc))
+        if not clusters:
+             return self.get_relevant_moves(board) # Fallback
+
+        for min_r, max_r, min_c, max_c in clusters:
+            # Apply padding
+            start_r = max(0, min_r - padding)
+            end_r = min(self.board_size - 1, max_r + padding)
+            start_c = max(0, min_c - padding)
+            end_c = min(self.board_size - 1, max_c + padding)
+
+            # Scan within this window
+            for r in range(start_r, end_r + 1):
+                for c in range(start_c, end_c + 1):
+                    idx = r * self.board_size + c
+                    if board[idx] == 0:
+                        # Check if it's close to ANY existing piece (relevance check)
+                        # This is still needed to avoid empty corners of the rect
+                        # But strictly, if we are in a tight cluster bbox, most empty spots are relevant.
+                        # Let's do a quick check: has neighbor within relevance_range?
+
+                        has_neighbor = False
+                        # Check 3x3 around it
+                        for dr in range(-1, 2):
+                            for dc in range(-1, 2):
+                                if dr==0 and dc==0: continue
+                                nr, nc = r+dr, c+dc
+                                if 0<=nr<self.board_size and 0<=nc<self.board_size:
+                                    if board[nr*self.board_size + nc] != 0:
+                                        has_neighbor = True
+                                        break
+                            if has_neighbor: break
+
+                        if has_neighbor:
+                            relevant_moves.add((r, c))
 
         return list(relevant_moves)
 
