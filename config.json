@@ -1,6 +1,6 @@
 {
   "game_settings": {
-    "board_size": 15,
+    "board_size": 19,
     "win_by_captures": 5,
     "empty": 0,
     "black_player": 1,
