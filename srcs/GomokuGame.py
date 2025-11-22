@@ -77,11 +77,16 @@ class GomokuGame:
             ui_cfg["fonts"]["main_font"],
             ui_cfg["fonts"]["main_font_size"]
         )
+        self.menu_font = pygame.font.SysFont(ui_cfg["fonts"]["main_font"], 48)
+        self.small_menu_font = pygame.font.SysFont(ui_cfg["fonts"]["main_font"], 32)
 
         # Game mode
         self.game_mode = game_cfg["default_game_mode"]
 
         # Game state
+        self.app_state = "MENU"  # Start in menu
+        self.menu_buttons = []   # Initialized in draw_menu or init
+
         # Aliases for logic state to minimize refactoring
         self.board = self.logic.board
         self.captures = self.logic.captures
@@ -139,6 +144,19 @@ class GomokuGame:
         clock = pygame.time.Clock()
 
         while True:
+            # --- MENU STATE ---
+            if self.app_state == "MENU":
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        self.quit_game()
+                    if event.type == pygame.MOUSEBUTTONDOWN:
+                        self.handle_menu_click(event.pos)
+
+                self.draw_menu()
+                pygame.display.flip()
+                clock.tick(30)
+                continue
+
             # AI's turn
             if (self.game_mode == "P_VS_AI" and
                 self.current_player == self.AI_PLAYER and
@@ -178,6 +196,9 @@ class GomokuGame:
                     if event.key == pygame.K_m:
                         self.game_mode = "P_VS_AI" if self.game_mode == "P_VS_P" else "P_VS_P"
                         print(f"--- Game Mode Switched to: {self.game_mode} ---")
+                    if event.key == pygame.K_ESCAPE:
+                        self.app_state = "MENU"
+                        self.reset_game()
 
             # Render
             self.draw_board()
@@ -193,9 +214,13 @@ class GomokuGame:
     def reset_game(self):
         """Resets the game to initial state."""
         print("--- Game Reset ---")
+
+        # Preserve current game mode
+        current_mode = self.game_mode
+
         self.logic.reset()
-        self.board = self.logic.board # Re-bind alias
-        self.captures = self.logic.captures # Re-bind alias
+        self.board = self.logic.board  # Re-bind alias
+        self.captures = self.logic.captures  # Re-bind alias
 
         self.game_over = False
         self.winner = None
@@ -211,7 +236,11 @@ class GomokuGame:
         self.ai.algorithm.clear_transposition_table()
 
         self.current_player = self.HUMAN_PLAYER
-        self.game_mode = self.config["game_settings"]["default_game_mode"]
+
+        # Restore game mode (unless it was explicitly changed before reset)
+        # Note: In handle_menu_click, we set self.game_mode BEFORE calling reset_game,
+        # so this logic preserves that selection.
+        self.game_mode = current_mode
 
         self.move_count = 0  # Reset to 0 (no initial move)
 
@@ -482,3 +511,66 @@ class GomokuGame:
         """Quits the game."""
         pygame.quit()
         sys.exit()
+
+    # ---
+    # Menu Functions
+    # ---
+
+    def draw_menu(self):
+        """Draws the main menu."""
+        self.screen.fill(self.COLOR_BOARD)
+
+        # Title
+        title_surf = self.menu_font.render("GOMOKU AI", True, self.COLOR_TEXT)
+        title_rect = title_surf.get_rect(center=(self.WIDTH // 2, self.HEIGHT // 4))
+        self.screen.blit(title_surf, title_rect)
+
+        # Buttons
+        button_width = 300
+        button_height = 60
+        spacing = 20
+        start_y = self.HEIGHT // 2 - 50
+
+        self.menu_buttons = []
+        options = [
+            ("Player vs AI", "P_VS_AI"),
+            ("Player vs Player", "P_VS_P"),
+            ("Quit", "QUIT")
+        ]
+
+        for i, (text, mode) in enumerate(options):
+            y = start_y + i * (button_height + spacing)
+            rect = pygame.Rect((self.WIDTH - button_width) // 2, y, button_width, button_height)
+            self.menu_buttons.append((rect, mode))
+
+            # Draw button background
+            mouse_pos = pygame.mouse.get_pos()
+            is_hovered = rect.collidepoint(mouse_pos)
+            color = self.COLOR_HIGHLIGHT if is_hovered else self.COLOR_WHITE
+
+            # Draw shadow
+            pygame.draw.rect(self.screen, (100, 100, 100), rect.move(4, 4), border_radius=10)
+            # Draw button
+            pygame.draw.rect(self.screen, color, rect, border_radius=10)
+            pygame.draw.rect(self.screen, self.COLOR_BLACK, rect, 2, border_radius=10)
+
+            # Draw text
+            text_surf = self.small_menu_font.render(text, True, self.COLOR_BLACK)
+            text_rect = text_surf.get_rect(center=rect.center)
+            self.screen.blit(text_surf, text_rect)
+
+        # Instructions
+        info_text = self.font.render("Press ESC during game to return here", True, (100, 100, 100))
+        info_rect = info_text.get_rect(center=(self.WIDTH // 2, self.HEIGHT - 40))
+        self.screen.blit(info_text, info_rect)
+
+    def handle_menu_click(self, pos):
+        """Handles clicks in the menu."""
+        for rect, mode in self.menu_buttons:
+            if rect.collidepoint(pos):
+                if mode == "QUIT":
+                    self.quit_game()
+                else:
+                    self.game_mode = mode
+                    self.app_state = "PLAYING"
+                    self.reset_game()  # Reset with new mode
