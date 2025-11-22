@@ -34,6 +34,7 @@ class GomokuAI:
         self.BROKEN_FOUR = heuristic_cfg["scores"]["broken_four"]
         self.CAPTURE_SCORE = heuristic_cfg["scores"]["capture_score"]
         self.OPEN_THREE = heuristic_cfg["scores"]["open_three"]
+        self.OPEN_TWO = heuristic_cfg["scores"]["open_two"]
 
         # Debug settings
         debug_cfg = ai_cfg.get("debug", {})
@@ -243,145 +244,117 @@ class GomokuAI:
     def get_ordered_moves(self, board, captures, player, game_logic, num_moves):
         """
         Gets moves ordered by their local score (for move ordering optimization).
-        ENHANCED: Uses capture simulation, adaptive move limits, and critical move detection.
+        OPTIMIZED: Uses static evaluation for initial sorting, simulating captures only when needed.
         """
         opponent = 2 if player == 1 else 1
-        win_by_captures = 5  # Standard Gomoku rule
 
         # CRITICAL: Always find moves that complete or block 4-in-a-row
         winning_positions, blocking_positions = self._find_critical_moves(board, player)
 
-        # DEBUG: Show critical moves found
-        if self.debug_critical_moves and (winning_positions or blocking_positions):
-            print(f"  🔍 Critical moves for player {player}:")
-            if winning_positions:
-                print(f"    Winning: {winning_positions}")
-            if blocking_positions:
-                print(f"    Blocking: {blocking_positions}")
-
-        # Tier 1: Immediate threats (check first)
-        winning_moves = []
-        blocking_moves = []
-        # Tier 2: High-value tactical moves
-        high_priority = []
-        # Tier 3: Good positional moves
-        mid_priority = []
-        # Tier 4: Normal developing moves (only used early game)
-        low_priority = []
-
-        # ENHANCED: Use windowed move generation for better performance
+        # Get legal moves
         legal_moves = self.get_relevant_moves_windowed(board, num_moves)
 
-        # CRITICAL: Add critical moves to ensure they're ALWAYS evaluated
+        # Add critical moves to ensure they're evaluated
         critical_moves = set(winning_positions + blocking_positions)
         legal_moves_set = set(legal_moves)
         legal_moves_set.update(critical_moves)
         legal_moves = list(legal_moves_set)
 
+        # Tier lists
+        winning_moves = []
+        blocking_moves = []
+        high_priority = []
+        mid_priority = []
+        low_priority = []
+
         for (r, c) in legal_moves:
+            # Fast legality check
+            if board[r][c] != 0:
+                continue
+
+            # For the static sort, we check legality but skip double-three for now if expensive?
+            # Actually, double-three check is relatively fast with new numeric patterns.
+            # But maybe we can defer it? No, better to filter illegal moves early.
             is_legal, _ = game_logic.is_legal_move(r, c, player, board)
             if not is_legal:
                 continue
 
-            # Evaluate MY score: place MY stone and evaluate
+            # STATIC EVALUATION (Lighter Heuristic)
+            # Instead of simulating captures, just score the position as if we placed a stone.
+            # This ignores capture effects on score, but is much faster.
+
+            # Score for ME (Offense)
+            # We temporarily place the stone to score lines, but using a helper that doesn't modify board?
+            # heuristic.score_lines_at reads the board.
+            # We can just pretend the board has the piece.
             board[r][c] = player
-            captured_pieces_mine = game_logic.check_and_apply_captures(r, c, player, board)
-            my_score, my_capture_pairs = self._evaluate_with_captures(
-                r, c, player, board
-            )
-            if my_capture_pairs > 0:
-                my_score += my_capture_pairs * self.CAPTURE_SCORE
-            if captures[player] + len(captured_pieces_mine) >= win_by_captures * 2:
-                my_score = self.WIN_SCORE * 0.95
+            score_attack = self.heuristic.score_lines_at(r, c, board, player, opponent)
+            board[r][c] = 0 # Restore
 
-            # Undo MY move
-            game_logic.undo_move(r, c, player, board, captured_pieces_mine,
-                               captures[player], captures,
-                               game_logic.current_hash)
-
-            # Evaluate OPPONENT's score: place OPPONENT's stone and evaluate
+            # Score for OPPONENT (Defense/Blocking)
+            # If opponent played here, how good would it be for them?
             board[r][c] = opponent
-            captured_pieces_opp = game_logic.check_and_apply_captures(r, c, opponent, board)
-            opp_score, opp_capture_pairs = self._evaluate_with_captures(
-                r, c, opponent, board
-            )
-            if opp_capture_pairs > 0:
-                opp_score += opp_capture_pairs * self.CAPTURE_SCORE
-            if captures[opponent] + len(captured_pieces_opp) >= win_by_captures * 2:
-                opp_score = self.WIN_SCORE * 0.95
+            score_defend = self.heuristic.score_lines_at(r, c, board, opponent, player)
+            board[r][c] = 0 # Restore
 
-            # Undo OPPONENT's move
-            game_logic.undo_move(r, c, opponent, board, captured_pieces_opp,
-                               captures[opponent], captures,
-                               game_logic.current_hash)
+            # Estimate capture potential (fast check)
+            # Just check if this move captures anything
+            capture_score = 0
+            # Only do full capture check if it looks promising or critical?
+            # For now, let's do a quick check.
+            # _get_capture_positions is reasonably fast (8 directions, simple checks)
+            captures_possible = self._get_capture_positions(r, c, player, board)
+            if captures_possible:
+                capture_score = len(captures_possible) // 2 * self.CAPTURE_SCORE
 
-            # DEBUG: Show scoring for critical moves
-            if self.debug_move_scores and (r, c) in critical_moves:
-                print(f"    Critical move ({r},{c}): my_score={my_score:.0f}, opp_score={opp_score:.0f}")
+            # Combined Score
+            # Attack score + Blocking score (weighted) + Capture bonus
+            total_score = score_attack + score_defend + capture_score
 
-            # Categorize by threat level (vulnerability already in scores)
-            if my_score >= self.WIN_SCORE * 0.5:
-                winning_moves.append((my_score, (r, c)))
-            elif opp_score >= self.WIN_SCORE * 0.5:
-                blocking_moves.append((opp_score, (r, c)))
+            # Categorize
+            if (r, c) in winning_positions:
+                winning_moves.append((total_score, (r, c)))
             elif (r, c) in blocking_positions:
-                # CRITICAL: Moves detected as blocking 4-in-a-row MUST be treated as blocking
-                # Even if score < WIN_SCORE*0.5 (which is very high threshold)
-                blocking_moves.append((max(opp_score, self.BROKEN_FOUR), (r, c)))
-            elif my_score >= self.BROKEN_FOUR or opp_score >= self.BROKEN_FOUR:
-                high_priority.append((max(my_score, opp_score * 1.1), (r, c)))
-            elif my_score >= self.OPEN_THREE or opp_score >= self.OPEN_THREE:
-                mid_priority.append((max(my_score, opp_score * 1.1), (r, c)))
+                blocking_moves.append((total_score, (r, c)))
+            elif score_attack >= self.OPEN_THREE or score_defend >= self.OPEN_THREE:
+                high_priority.append((total_score, (r, c)))
+            elif score_attack >= self.OPEN_TWO or score_defend >= self.OPEN_TWO:
+                mid_priority.append((total_score, (r, c)))
             else:
-                low_priority.append((my_score, (r, c)))
+                low_priority.append((total_score, (r, c)))
 
-        # Sort each tier by score (highest first)
+        # Sort tiers
         winning_moves.sort(reverse=True)
         blocking_moves.sort(reverse=True)
         high_priority.sort(reverse=True)
         mid_priority.sort(reverse=True)
         low_priority.sort(reverse=True)
 
-        # ENHANCED: Aggressive move limiting based on game phase
+        # Adaptive Limits
         if winning_moves:
-            # If we have winning moves, only consider those
-            return [move for score, move in winning_moves[:5]]
+            return [move for score, move in winning_moves] # All winning moves
 
+        # If we have blocking moves, prioritize them but include some attacks
         if blocking_moves:
-            # Must block, but also consider our threats
             result = [move for score, move in blocking_moves[:6]]
-            result.extend([move for score, move in high_priority[:6]])
-            if self.debug_move_categories:
-                print(f"  📋 Returning {len(blocking_moves)} blocking moves (showing first 6): {[move for score, move in blocking_moves[:6]]}")
-            return result[:12]
+            result.extend([move for score, move in high_priority[:4]])
+            return result[:10]
 
-        # Adaptive max moves based on game phase
         if num_moves < 10:
-            max_moves = 18  # Early game: explore more
+            max_moves = 18
         elif num_moves < 25:
-            max_moves = 14  # Mid game: focused
+            max_moves = 14
         else:
-            max_moves = 12  # Late game: very focused
+            max_moves = 12
 
-        # Combine tiers with limits
         result = []
-        result.extend([move for score, move in high_priority[:max_moves // 2]])
-        result.extend([move for score, move in mid_priority[:max_moves // 3]])
-        if self.debug_move_categories:
-            print(f"  📋 No blocking moves. Returning {len(high_priority)} high + {len(mid_priority)} mid priority")
+        result.extend([move for score, move in high_priority])
 
-        # Always include some low priority moves if we don't have enough
-        if len(result) < max_moves // 2:
-            result.extend([move for score, move in low_priority[:max_moves]])
+        if len(result) < max_moves:
+            result.extend([move for score, move in mid_priority])
 
-        # Ensure we always return moves if any exist
-        if not result:
-            # Fallback: combine all tiers and return best moves
-            all_moves = (winning_moves + blocking_moves + high_priority +
-                        mid_priority + low_priority)
-            if all_moves:
-                all_moves.sort(reverse=True)
-                result = [move for score, move in all_moves[:max_moves]]
+        if len(result) < max_moves:
+            result.extend([move for score, move in low_priority])
 
         return result[:max_moves]
 
