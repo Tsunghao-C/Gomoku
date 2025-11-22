@@ -230,7 +230,8 @@ class HeuristicEvaluator:
         lines_seen = set()
         for r in range(self.board_size):
             for c in range(self.board_size):
-                if board[r][c] != 0:
+                idx = r * self.board_size + c
+                if board[idx] != 0:
                     for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
                         line_coords = get_line_coords(r, c, dr, dc, self.board_size)
                         line_key = tuple(sorted(line_coords))
@@ -269,7 +270,8 @@ class HeuristicEvaluator:
 
         for r in range(self.board_size):
             for c in range(self.board_size):
-                if board[r][c] == player:
+                idx = r * self.board_size + c
+                if board[idx] == player:
                     if self._is_stone_in_vulnerable_position(r, c, player, opponent, board):
                         vulnerability_score += 1
 
@@ -313,21 +315,26 @@ class HeuristicEvaluator:
                 if not (0 <= r1 < self.board_size and 0 <= c1 < self.board_size):
                     continue
 
-                if board[r1][c1] == player:
+                idx1 = r1 * self.board_size + c1
+                if board[idx1] == player:
                     if (0 <= r_before < self.board_size and 0 <= c_before < self.board_size and
                         0 <= r_after < self.board_size and 0 <= c_after < self.board_size):
 
-                        if (board[r_before][c_before] == opponent and board[r_after][c_after] == 0):
+                        idx_before = r_before * self.board_size + c_before
+                        idx_after = r_after * self.board_size + c_after
+
+                        if (board[idx_before] == opponent and board[idx_after] == 0):
                             return True
-                        if (board[r_after][c_after] == opponent and board[r_before][c_before] == 0):
+                        if (board[idx_after] == opponent and board[idx_before] == 0):
                             return True
 
         # Check if surrounded by opponent stones
         adjacent_opponent = 0
         for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
             nr, nc = r + dr, c + dc
-            if (0 <= nr < self.board_size and 0 <= nc < self.board_size and
-                board[nr][nc] == opponent):
-                adjacent_opponent += 1
+            if (0 <= nr < self.board_size and 0 <= nc < self.board_size):
+                idx = nr * self.board_size + nc
+                if board[idx] == opponent:
+                    adjacent_opponent += 1
 
         return adjacent_opponent >= 2

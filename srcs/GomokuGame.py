@@ -222,7 +222,9 @@ class GomokuGame:
         row = round((y - self.MARGIN - self.SQUARE_SIZE // 2) / self.SQUARE_SIZE)
 
         if 0 <= row < self.BOARD_SIZE and 0 <= col < self.BOARD_SIZE:
-            if self.board[row][col] == self.EMPTY:
+            # 1D Access
+            idx = row * self.BOARD_SIZE + col
+            if self.board[idx] == self.EMPTY:
                 self.hover_pos = (row, col)
                 is_legal, reason = self.logic.is_legal_move(row, col, self.current_player,
                                                       self.board)
@@ -386,7 +388,8 @@ class GomokuGame:
         """Draws the pieces on the board."""
         for r in range(self.BOARD_SIZE):
             for c in range(self.BOARD_SIZE):
-                player = self.board[r][c]
+                idx = r * self.BOARD_SIZE + c
+                player = self.board[idx]
                 if player != self.EMPTY:
                     cx = self.MARGIN + self.SQUARE_SIZE // 2 + c * self.SQUARE_SIZE
                     cy = self.MARGIN + self.SQUARE_SIZE // 2 + r * self.SQUARE_SIZE

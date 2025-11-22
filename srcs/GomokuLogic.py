@@ -27,8 +27,8 @@ class GomokuLogic:
         self.WIN_BY_CAPTURES = game_cfg["win_by_captures"]
 
         # Initialize board and state
-        self.board = [[self.EMPTY for _ in range(self.BOARD_SIZE)]
-                      for _ in range(self.BOARD_SIZE)]
+        # OPTIMIZATION: Use 1D array for board
+        self.board = [self.EMPTY] * (self.BOARD_SIZE * self.BOARD_SIZE)
         self.captures = {self.BLACK_PLAYER: 0, self.WHITE_PLAYER: 0}
 
         # Zobrist Hashing
@@ -44,29 +44,34 @@ class GomokuLogic:
 
     def init_zobrist(self):
         """Initializes the Zobrist hash table with random values."""
-        self.zobrist_table = [[[0] * 3 for _ in range(self.BOARD_SIZE)]
-                             for _ in range(self.BOARD_SIZE)]
-        for r in range(self.BOARD_SIZE):
-            for c in range(self.BOARD_SIZE):
-                for p in [self.EMPTY, self.BLACK_PLAYER, self.WHITE_PLAYER]:
-                    self.zobrist_table[r][c][p] = random.randint(0, 2**64 - 1)
+        # Use 1D array for zobrist table for cache locality
+        # Size: BOARD_SIZE * BOARD_SIZE * 3 (EMPTY, BLACK, WHITE)
+        # Actually, let's keep it as [size*size][3] list of lists for easy indexing
+        # Or flatten everything? Let's flatten the board dimension.
+        self.zobrist_table = [[0] * 3 for _ in range(self.BOARD_SIZE * self.BOARD_SIZE)]
+
+        for i in range(self.BOARD_SIZE * self.BOARD_SIZE):
+            for p in [self.EMPTY, self.BLACK_PLAYER, self.WHITE_PLAYER]:
+                self.zobrist_table[i][p] = random.randint(0, 2**64 - 1)
 
     def compute_initial_hash(self):
         """Computes the initial Zobrist hash of the board."""
         h = 0
-        for r in range(self.BOARD_SIZE):
-            for c in range(self.BOARD_SIZE):
-                piece = self.board[r][c]
-                if piece != self.EMPTY: # Should be empty initially, but good for robustness
-                    h ^= self.zobrist_table[r][c][piece]
+        for i in range(self.BOARD_SIZE * self.BOARD_SIZE):
+            piece = self.board[i]
+            if piece != self.EMPTY:
+                h ^= self.zobrist_table[i][piece]
         return h
 
     def reset(self):
         """Resets the board and state."""
-        self.board = [[self.EMPTY for _ in range(self.BOARD_SIZE)]
-                      for _ in range(self.BOARD_SIZE)]
+        self.board = [self.EMPTY] * (self.BOARD_SIZE * self.BOARD_SIZE)
         self.captures = {self.BLACK_PLAYER: 0, self.WHITE_PLAYER: 0}
         self.current_hash = self.compute_initial_hash()
+
+    def _get_idx(self, r, c):
+        """Helper to get 1D index."""
+        return r * self.BOARD_SIZE + c
 
     # --- Move Execution (Low Level) ---
 
@@ -77,13 +82,14 @@ class GomokuLogic:
 
         Returns: (captured_pieces, new_zobrist_hash)
         """
-        if board[row][col] != self.EMPTY:
+        idx = row * self.BOARD_SIZE + col
+        if board[idx] != self.EMPTY:
             return [], zobrist_hash
 
         # Update hash for placing the piece
-        zobrist_hash ^= self.zobrist_table[row][col][self.EMPTY]
-        board[row][col] = player
-        zobrist_hash ^= self.zobrist_table[row][col][player]
+        zobrist_hash ^= self.zobrist_table[idx][self.EMPTY]
+        board[idx] = player
+        zobrist_hash ^= self.zobrist_table[idx][player]
 
         # Check for captures
         captured_pieces = self.check_and_apply_captures(row, col, player, board)
@@ -92,8 +98,9 @@ class GomokuLogic:
         if captured_pieces:
             opponent = self.WHITE_PLAYER if player == self.BLACK_PLAYER else self.BLACK_PLAYER
             for (r_cap, c_cap) in captured_pieces:
-                zobrist_hash ^= self.zobrist_table[r_cap][c_cap][opponent]
-                zobrist_hash ^= self.zobrist_table[r_cap][c_cap][self.EMPTY]
+                cap_idx = r_cap * self.BOARD_SIZE + c_cap
+                zobrist_hash ^= self.zobrist_table[cap_idx][opponent]
+                zobrist_hash ^= self.zobrist_table[cap_idx][self.EMPTY]
 
         return captured_pieces, zobrist_hash
 
@@ -105,16 +112,18 @@ class GomokuLogic:
         # Restore captured pieces
         if captured_pieces:
             for (cr, cc) in captured_pieces:
-                board[cr][cc] = opponent
-                zobrist_hash ^= self.zobrist_table[cr][cc][self.EMPTY]
-                zobrist_hash ^= self.zobrist_table[cr][cc][opponent]
+                cap_idx = cr * self.BOARD_SIZE + cc
+                board[cap_idx] = opponent
+                zobrist_hash ^= self.zobrist_table[cap_idx][self.EMPTY]
+                zobrist_hash ^= self.zobrist_table[cap_idx][opponent]
 
         captures_dict[player] = old_capture_count
 
         # Remove the piece
-        board[r][c] = self.EMPTY
-        zobrist_hash ^= self.zobrist_table[r][c][player]
-        zobrist_hash ^= self.zobrist_table[r][c][self.EMPTY]
+        idx = r * self.BOARD_SIZE + c
+        board[idx] = self.EMPTY
+        zobrist_hash ^= self.zobrist_table[idx][player]
+        zobrist_hash ^= self.zobrist_table[idx][self.EMPTY]
 
         return zobrist_hash
 
@@ -137,11 +146,15 @@ class GomokuLogic:
                    0 <= r3 < self.BOARD_SIZE and 0 <= c3 < self.BOARD_SIZE):
                 continue
 
-            if (board[r1][c1] == opponent and
-                board[r2][c2] == opponent and
-                board[r3][c3] == player):
-                board[r1][c1] = self.EMPTY
-                board[r2][c2] = self.EMPTY
+            idx1 = r1 * self.BOARD_SIZE + c1
+            idx2 = r2 * self.BOARD_SIZE + c2
+            idx3 = r3 * self.BOARD_SIZE + c3
+
+            if (board[idx1] == opponent and
+                board[idx2] == opponent and
+                board[idx3] == player):
+                board[idx1] = self.EMPTY
+                board[idx2] = self.EMPTY
                 all_captured.append((r1, c1))
                 all_captured.append((r2, c2))
 
@@ -158,25 +171,15 @@ class GomokuLogic:
         if not (0 <= row < self.BOARD_SIZE and 0 <= col < self.BOARD_SIZE):
              return (False, "Out of bounds")
 
-        if board[row][col] != self.EMPTY:
+        idx = row * self.BOARD_SIZE + col
+        if board[idx] != self.EMPTY:
             return (False, "Occupied")
 
         # OPTIMIZATION: Simulate move without deepcopy
         opponent = self.WHITE_PLAYER if player == self.BLACK_PLAYER else self.BLACK_PLAYER
 
-        # 1. Temporarily apply captures
-        # We need to know what pieces WOULD be captured to check the board state for double threes.
-        # Instead of actually removing them, check_and_apply_captures removes them.
-        # So we must save what was removed to restore it.
-
-        # Ideally, we'd have a check_captures_only method, but let's just use the existing one
-        # and revert changes. But wait, check_and_apply_captures modifies the board!
-        # If we pass 'board', it modifies the REAL board if called from game loop,
-        # or the search board if called from AI.
-        # Here we are just checking legality.
-
         # Temporarily place stone
-        board[row][col] = player
+        board[idx] = player
 
         # Apply captures (modifies board)
         captured_pieces = self.check_and_apply_captures(row, col, player, board)
@@ -187,10 +190,11 @@ class GomokuLogic:
         # RESTORE BOARD STATE
         # 1. Restore captured pieces
         for (r_cap, c_cap) in captured_pieces:
-            board[r_cap][c_cap] = opponent
+            cap_idx = r_cap * self.BOARD_SIZE + c_cap
+            board[cap_idx] = opponent
 
         # 2. Remove placed stone
-        board[row][col] = self.EMPTY
+        board[idx] = self.EMPTY
 
         if free_threes_count >= 2:
             return (False, "Illegal (Double-Three)")
@@ -266,16 +270,24 @@ class GomokuLogic:
             # Check forward
             for i in range(1, 5):
                 r, c = last_row + dr * i, last_col + dc * i
-                if 0 <= r < self.BOARD_SIZE and 0 <= c < self.BOARD_SIZE and board[r][c] == player:
-                    win_line.append((r, c))
+                if 0 <= r < self.BOARD_SIZE and 0 <= c < self.BOARD_SIZE:
+                    idx = r * self.BOARD_SIZE + c
+                    if board[idx] == player:
+                        win_line.append((r, c))
+                    else:
+                        break
                 else:
                     break
 
             # Check backward
             for i in range(1, 5):
                 r, c = last_row - dr * i, last_col - dc * i
-                if 0 <= r < self.BOARD_SIZE and 0 <= c < self.BOARD_SIZE and board[r][c] == player:
-                    win_line.append((r, c))
+                if 0 <= r < self.BOARD_SIZE and 0 <= c < self.BOARD_SIZE:
+                    idx = r * self.BOARD_SIZE + c
+                    if board[idx] == player:
+                        win_line.append((r, c))
+                    else:
+                        break
                 else:
                     break
 

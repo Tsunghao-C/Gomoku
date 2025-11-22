@@ -182,10 +182,11 @@ class GomokuAI:
 
         for r in range(self.board_size):
             for c in range(self.board_size):
-                if board[r][c] == 0:
+                idx = r * self.board_size + c
+                if board[idx] == 0:
                     continue
 
-                current_player = board[r][c]
+                current_player = board[idx]
 
                 # Check all 4 directions for potential 4-in-a-row
                 for dr, dc in directions:
@@ -198,9 +199,10 @@ class GomokuAI:
                     for _ in range(4):
                         if not (0 <= nr < self.board_size and 0 <= nc < self.board_size):
                             break
-                        if board[nr][nc] == current_player:
+                        n_idx = nr * self.board_size + nc
+                        if board[n_idx] == current_player:
                             count += 1
-                        elif board[nr][nc] == 0 and not found_empty_forward:
+                        elif board[n_idx] == 0 and not found_empty_forward:
                             # Only add the FIRST empty square (adjacent to the run)
                             empty_positions.append((nr, nc))
                             found_empty_forward = True
@@ -216,9 +218,10 @@ class GomokuAI:
                     for _ in range(4):
                         if not (0 <= nr < self.board_size and 0 <= nc < self.board_size):
                             break
-                        if board[nr][nc] == current_player:
+                        n_idx = nr * self.board_size + nc
+                        if board[n_idx] == current_player:
                             count += 1
-                        elif board[nr][nc] == 0 and not found_empty_backward:
+                        elif board[n_idx] == 0 and not found_empty_backward:
                             # Only add the FIRST empty square (adjacent to the run)
                             empty_positions.append((nr, nc))
                             found_empty_backward = True
@@ -269,7 +272,8 @@ class GomokuAI:
 
         for (r, c) in legal_moves:
             # Fast legality check
-            if board[r][c] != 0:
+            idx = r * self.board_size + c
+            if board[idx] != 0:
                 continue
 
             # For the static sort, we check legality but skip double-three for now if expensive?
@@ -287,15 +291,15 @@ class GomokuAI:
             # We temporarily place the stone to score lines, but using a helper that doesn't modify board?
             # heuristic.score_lines_at reads the board.
             # We can just pretend the board has the piece.
-            board[r][c] = player
+            board[idx] = player
             score_attack = self.heuristic.score_lines_at(r, c, board, player, opponent)
-            board[r][c] = 0 # Restore
+            board[idx] = 0 # Restore
 
             # Score for OPPONENT (Defense/Blocking)
             # If opponent played here, how good would it be for them?
-            board[r][c] = opponent
+            board[idx] = opponent
             score_defend = self.heuristic.score_lines_at(r, c, board, opponent, player)
-            board[r][c] = 0 # Restore
+            board[idx] = 0 # Restore
 
             # Estimate capture potential (fast check)
             # Just check if this move captures anything
@@ -368,7 +372,8 @@ class GomokuAI:
 
         for r in range(self.board_size):
             for c in range(self.board_size):
-                if board[r][c] != 0:
+                idx = r * self.board_size + c
+                if board[idx] != 0:
                     min_r = min(min_r, r)
                     max_r = max(max_r, r)
                     min_c = min(min_c, c)
@@ -400,7 +405,8 @@ class GomokuAI:
         # Only scan within bounding box
         for r in range(min_r, max_r + 1):
             for c in range(min_c, max_c + 1):
-                if board[r][c] != 0:
+                idx = r * self.board_size + c
+                if board[idx] != 0:
                     # Add empty squares around pieces
                     for dr in range(-self.relevance_range, self.relevance_range + 1):
                         for dc in range(-self.relevance_range, self.relevance_range + 1):
@@ -408,9 +414,10 @@ class GomokuAI:
                                 continue
                             nr, nc = r + dr, c + dc
                             if (min_r <= nr <= max_r and
-                                min_c <= nc <= max_c and
-                                board[nr][nc] == 0):
-                                relevant_moves.add((nr, nc))
+                                min_c <= nc <= max_c):
+                                n_idx = nr * self.board_size + nc
+                                if board[n_idx] == 0:
+                                    relevant_moves.add((nr, nc))
 
         return list(relevant_moves)
 
@@ -431,9 +438,13 @@ class GomokuAI:
             nr3, nc3 = r + dr * 3, c + dc * 3
 
             if (0 <= nr3 < self.board_size and 0 <= nc3 < self.board_size):
-                if (board[nr1][nc1] == opponent and
-                    board[nr2][nc2] == opponent and
-                    board[nr3][nc3] == player):
+                idx1 = nr1 * self.board_size + nc1
+                idx2 = nr2 * self.board_size + nc2
+                idx3 = nr3 * self.board_size + nc3
+
+                if (board[idx1] == opponent and
+                    board[idx2] == opponent and
+                    board[idx3] == player):
                     captured.append((nr1, nc1))
                     captured.append((nr2, nc2))
 
@@ -458,17 +469,20 @@ class GomokuAI:
             return score, 0
 
         # Step 2: Temporarily simulate the move
-        board[r][c] = player
+        idx = r * self.board_size + c
+        board[idx] = player
         for (cr, cc) in capture_positions:
-            board[cr][cc] = 0
+            cap_idx = cr * self.board_size + cc
+            board[cap_idx] = 0
 
         # Step 3: Evaluate the resulting position
         score = self.heuristic.score_lines_at(r, c, board, player, opponent)
 
         # Step 4: RESTORE board to original state
-        board[r][c] = 0
+        board[idx] = 0
         for (cr, cc) in capture_positions:
-            board[cr][cc] = opponent
+            cap_idx = cr * self.board_size + cc
+            board[cap_idx] = opponent
 
         # Return score and number of capture pairs
         num_pairs = len(capture_positions) // 2
@@ -486,7 +500,8 @@ class GomokuAI:
         board_has_pieces = False
         for r in range(self.board_size):
             for c in range(self.board_size):
-                if board[r][c] != 0:
+                idx = r * self.board_size + c
+                if board[idx] != 0:
                     board_has_pieces = True
                     break
             if board_has_pieces:
@@ -503,14 +518,16 @@ class GomokuAI:
         # Normal case: find moves around existing pieces
         for r in range(self.board_size):
             for c in range(self.board_size):
-                if board[r][c] != 0:
+                idx = r * self.board_size + c
+                if board[idx] != 0:
                     for dr in range(-self.relevance_range, self.relevance_range + 1):
                         for dc in range(-self.relevance_range, self.relevance_range + 1):
                             if dr == 0 and dc == 0:
                                 continue
                             nr, nc = r + dr, c + dc
                             if (0 <= nr < self.board_size and
-                                0 <= nc < self.board_size and
-                                board[nr][nc] == 0):
-                                relevant_moves.add((nr, nc))
+                                0 <= nc < self.board_size):
+                                n_idx = nr * self.board_size + nc
+                                if board[n_idx] == 0:
+                                    relevant_moves.add((nr, nc))
         return list(relevant_moves)

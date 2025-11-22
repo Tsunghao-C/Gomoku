@@ -7,6 +7,7 @@ def get_line_string(r, c, dr, dc, board, player, opponent, board_size):
     """
     Gets a string representation of a line passing through (r,c) in direction (dr,dc).
     'P' = Player, 'O' = Opponent, 'E' = Empty, 'X' = Out of bounds
+    NOTE: board is 1D array now.
     """
     line = [''] * 31
     for i in range(-15, 16):
@@ -15,7 +16,7 @@ def get_line_string(r, c, dr, dc, board, player, opponent, board_size):
         if not (0 <= cr < board_size and 0 <= cc < board_size):
             line[idx] = 'X'
         else:
-            piece = board[cr][cc]
+            piece = board[cr * board_size + cc]
             if piece == 0:  # EMPTY
                 line[idx] = 'E'
             elif piece == player:
@@ -30,10 +31,8 @@ def get_line_values(r, c, dr, dc, board, player, opponent, board_size):
     Gets a numerical representation of a line passing through (r,c).
     Values: 0=Empty, 1=Player, 2=Opponent, 3=OutOfBounds
     Returns a list of integers.
+    NOTE: board is 1D array now.
     """
-    # We reduce the radius to 6 (length 13) which is sufficient for all patterns (max len 7)
-    # centered roughly on the move.
-    # Original used radius 15 (len 31).
     line = [0] * 13
     for i in range(-6, 7):
         cr, cc = r + dr * i, c + dc * i
@@ -41,14 +40,13 @@ def get_line_values(r, c, dr, dc, board, player, opponent, board_size):
         if not (0 <= cr < board_size and 0 <= cc < board_size):
             line[idx] = 3  # X
         else:
-            piece = board[cr][cc]
+            piece = board[cr * board_size + cc]
             if piece == 0:
                 line[idx] = 0  # E
             elif piece == player:
                 line[idx] = 1  # P
             elif piece == opponent:
                 line[idx] = 2  # O
-            # If piece is something else (shouldn't happen), treat as occupied/opponent
     return line
 
 
