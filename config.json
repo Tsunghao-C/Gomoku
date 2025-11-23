@@ -44,7 +44,6 @@
     "scores": {
       "win_score": 1000000000,
       "pending_win_score": 50000000,
-      "open_four": 1000000,
       "broken_four": 400000,
       "closed_four": 50000,
       "open_three": 10000,
@@ -52,20 +51,8 @@
       "closed_three": 5000,
       "open_two": 100,
       "closed_two": 10,
-      "capture_threat_open": 30000,
-      "capture_score": 2500,
-      "capture_setup_bridge": 1000
-    },
-    "capture_defense": {
-      "enable": true,
-      "critical_threshold": 8,
-      "warning_threshold": 6,
-      "early_warning_threshold": 4,
-      "critical_penalty": 800000,
-      "warning_penalty": 300000,
-      "early_warning_penalty": 150000,
-      "desperate_penalty": 3000000,
-      "trap_detection_penalty": 400000
+      "capture_threat_open": 15000,
+      "capture_score": 20000
     }
   },
   

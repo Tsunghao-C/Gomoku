@@ -85,7 +85,9 @@ class GomokuAI:
 
         # Create wrapper functions for game logic
         def ordered_moves_wrapper(board, captures, player):
-            return self.get_ordered_moves(board, captures, player, game_logic, num_moves)
+            return self.get_ordered_moves(
+                board, captures, player, game_logic, num_moves, win_by_captures
+            )
 
         def make_move_wrapper(r, c, player, board, captures, zobrist_hash):
             return self.make_move_and_get_delta(
@@ -150,8 +152,11 @@ class GomokuAI:
         opponent = 2 if player == 1 else 1
 
         # Get score BEFORE the move
-        score_before_me = self.heuristic.score_lines_at(r, c, board, player, opponent)
-        score_before_opp = self.heuristic.score_lines_at(r, c, board, opponent, player)
+        is_critical_me = captures[player] >= (win_by_captures * 2 - 2)
+        is_critical_opp = captures[opponent] >= (win_by_captures * 2 - 2)
+
+        score_before_me = self.heuristic.score_lines_at(r, c, board, player, opponent, is_critical_me)
+        score_before_opp = self.heuristic.score_lines_at(r, c, board, opponent, player, is_critical_opp)
 
         # Make the move
         captured_pieces, new_hash = game_logic.make_move(
@@ -159,8 +164,8 @@ class GomokuAI:
         )
 
         # Get score AFTER the move
-        score_after_me = self.heuristic.score_lines_at(r, c, board, player, opponent)
-        score_after_opp = self.heuristic.score_lines_at(r, c, board, opponent, player)
+        score_after_me = self.heuristic.score_lines_at(r, c, board, player, opponent, is_critical_me)
+        score_after_opp = self.heuristic.score_lines_at(r, c, board, opponent, player, is_critical_opp)
 
         # Calculate delta
         delta_my_lines = score_after_me - score_before_me
@@ -256,12 +261,16 @@ class GomokuAI:
 
         return list(winning_positions), list(blocking_positions)
 
-    def get_ordered_moves(self, board, captures, player, game_logic, num_moves):
+    def get_ordered_moves(self, board, captures, player, game_logic, num_moves, win_by_captures=5):
         """
         Gets moves ordered by their local score (for move ordering optimization).
         OPTIMIZED: Uses static evaluation for initial sorting, simulating captures only when needed.
         """
         opponent = 2 if player == 1 else 1
+
+        # Check critical status for both players
+        is_critical_attack = captures[player] >= (win_by_captures * 2 - 2)
+        is_critical_defend = captures[opponent] >= (win_by_captures * 2 - 2)
 
         # CRITICAL: Always find moves that complete or block 4-in-a-row
         winning_positions, blocking_positions = self._find_critical_moves(board, player)
@@ -304,24 +313,37 @@ class GomokuAI:
             # heuristic.score_lines_at reads the board.
             # We can just pretend the board has the piece.
             board[idx] = player
-            score_attack = self.heuristic.score_lines_at(r, c, board, player, opponent)
+            score_attack = self.heuristic.score_lines_at(r, c, board, player, opponent, is_critical_attack)
             board[idx] = 0 # Restore
 
             # Score for OPPONENT (Defense/Blocking)
             # If opponent played here, how good would it be for them?
             board[idx] = opponent
-            score_defend = self.heuristic.score_lines_at(r, c, board, opponent, player)
+            score_defend = self.heuristic.score_lines_at(r, c, board, opponent, player, is_critical_defend)
             board[idx] = 0 # Restore
 
             # Estimate capture potential (fast check)
-            # Just check if this move captures anything
             capture_score = 0
-            # Only do full capture check if it looks promising or critical?
-            # For now, let's do a quick check.
-            # _get_capture_positions is reasonably fast (8 directions, simple checks)
-            captures_possible = self._get_capture_positions(r, c, player, board)
-            if captures_possible:
-                capture_score = len(captures_possible) // 2 * self.CAPTURE_SCORE
+
+            # 1. Does this move allow ME to capture?
+            captures_by_me = self._get_capture_positions(r, c, player, board)
+            if captures_by_me:
+                if is_critical_attack:
+                    # This capture wins the game!
+                    capture_score += self.WIN_SCORE
+                else:
+                    capture_score += len(captures_by_me) // 2 * self.CAPTURE_SCORE
+
+            # 2. Does playing here BLOCK an opponent capture?
+            # We check if the opponent playing at this same spot would capture something.
+            captures_by_opp = self._get_capture_positions(r, c, opponent, board)
+            if captures_by_opp:
+                if is_critical_defend:
+                    # Opponent capturing here would win them the game! We MUST block.
+                    capture_score += self.WIN_SCORE
+                else:
+                    # Standard defense value for preventing a capture
+                    capture_score += len(captures_by_opp) // 2 * self.CAPTURE_SCORE
 
             # Combined Score
             # Attack score + Blocking score (weighted) + Capture bonus
@@ -549,6 +571,11 @@ class GomokuAI:
 
         # Step 1: Find what would be captured
         capture_positions = self._get_capture_positions(r, c, player, board)
+
+        # Note: We can't easily get capture count inside this fast evaluation method
+        # So we default critical check to False for this specific estimation method
+        # unless we pass captures dict, which requires changing signature extensively.
+        # For now, standard evaluation is safer.
 
         if not capture_positions:
             # No captures, just evaluate normally

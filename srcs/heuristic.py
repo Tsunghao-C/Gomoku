@@ -20,7 +20,6 @@ class HeuristicEvaluator:
         # Load all heuristic scores from config
         self.WIN_SCORE = scores["win_score"]
         self.PENDING_WIN_SCORE = scores["pending_win_score"]
-        self.OPEN_FOUR = scores["open_four"]
         self.BROKEN_FOUR = scores["broken_four"]
         self.CLOSED_FOUR = scores["closed_four"]
         self.OPEN_THREE = scores["open_three"]
@@ -30,7 +29,6 @@ class HeuristicEvaluator:
         self.CLOSED_TWO = scores["closed_two"]
         self.CAPTURE_THREAT_OPEN = scores["capture_threat_open"]
         self.CAPTURE_SCORE = scores["capture_score"]
-        self.CAPTURE_SETUP_BRIDGE = scores["capture_setup_bridge"]
 
         # Store capture defense config for position evaluation
         self.capture_defense_cfg = heuristic_cfg.get("capture_defense", {})
@@ -108,9 +106,6 @@ class HeuristicEvaluator:
             make_pattern(E, P, P, E, E, P, E)
         ]
 
-        # --- Capture Setup ---
-        self.PAT_CAPTURE_SETUP = make_pattern(P, O, E, P)
-
         # --- Open Twos ---
         self.PATS_OPEN_TWO = [
             make_pattern(E, P, P, E),
@@ -123,7 +118,7 @@ class HeuristicEvaluator:
             self.PATS_CLOSED_TWO.append(make_pattern(blocker, P, P, E))
             self.PATS_CLOSED_TWO.append(make_pattern(E, P, P, blocker))
 
-    def score_line_numeric(self, line):
+    def score_line_numeric(self, line, is_critical=False):
         """
         Scores a line (list of integers) based on pattern recognition.
         Uses sliding window or fast sequential checks.
@@ -152,7 +147,7 @@ class HeuristicEvaluator:
 
         # --- Open Four ---
         if has_pattern(self.PAT_OPEN_FOUR):
-            score += self.OPEN_FOUR
+            score += self.PENDING_WIN_SCORE  # Unstoppable (Open 4)
 
         # --- Broken Fours ---
         for pat in self.PATS_BROKEN_FOUR:
@@ -167,7 +162,8 @@ class HeuristicEvaluator:
         # --- Capture Threats ---
         for pat in self.PATS_CAPTURE_THREAT:
             if has_pattern(pat):
-                score += self.CAPTURE_THREAT_OPEN
+                # If we are in a critical state (e.g. 8 captures), a threat is a pending win
+                score += self.PENDING_WIN_SCORE if is_critical else self.CAPTURE_THREAT_OPEN
 
         # --- Open Threes ---
         for pat in self.PATS_OPEN_THREE:
@@ -184,10 +180,6 @@ class HeuristicEvaluator:
             if has_pattern(pat):
                 score += self.BROKEN_THREE
 
-        # --- Capture Setup ---
-        if has_pattern(self.PAT_CAPTURE_SETUP):
-            score += self.CAPTURE_SETUP_BRIDGE
-
         # --- Open Twos ---
         for pat in self.PATS_OPEN_TWO:
             if has_pattern(pat):
@@ -200,7 +192,7 @@ class HeuristicEvaluator:
 
         return score
 
-    def score_lines_at(self, r, c, board, player, opponent):
+    def score_lines_at(self, r, c, board, player, opponent, is_critical=False):
         """
         Scores the 4 lines (H, V, D1, D2) passing through (r,c).
         Uses numeric evaluation.
@@ -210,7 +202,7 @@ class HeuristicEvaluator:
         score = 0
         for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
             line_vals = get_line_values(r, c, dr, dc, board, player, opponent, self.board_size)
-            score += self.score_line_numeric(line_vals)
+            score += self.score_line_numeric(line_vals, is_critical)
         return score
 
     def calculate_player_score(self, board, captures, player, win_by_captures):
@@ -227,6 +219,9 @@ class HeuristicEvaluator:
 
         score += (captures[player] // 2) * self.CAPTURE_SCORE
 
+        # Critical capture check: if we are 1 pair away from winning, threats are deadly
+        is_critical = captures[player] >= (win_by_captures * 2 - 2)
+
         lines_seen = set()
         for r in range(self.board_size):
             for c in range(self.board_size):
@@ -239,7 +234,7 @@ class HeuristicEvaluator:
                         if line_key not in lines_seen:
                             lines_seen.add(line_key)
                             line_vals = get_line_values(r, c, dr, dc, board, player, opponent, self.board_size)
-                            score += self.score_line_numeric(line_vals)
+                            score += self.score_line_numeric(line_vals, is_critical)
 
         return score
 
@@ -251,90 +246,6 @@ class HeuristicEvaluator:
         my_score = self.calculate_player_score(board, captures, player, win_by_captures)
         opponent_score = self.calculate_player_score(board, captures, opponent, win_by_captures)
 
-        vulnerability_penalty = self._calculate_position_vulnerability(
-            board, captures, player, opponent, win_by_captures
-        )
-
-        final_score = my_score - (opponent_score * 1.1) - vulnerability_penalty
+        # Basic score: My potential - Opponent potential
+        final_score = my_score - (opponent_score * 1.1)
         return final_score
-
-    def _calculate_position_vulnerability(self, board, captures, player, opponent, win_by_captures):
-        """
-        Calculates vulnerability penalty for the current board position.
-        """
-        if not hasattr(self, 'capture_defense_cfg') or not self.capture_defense_cfg.get('enable', True):
-            return 0
-
-        vulnerability_score = 0
-        opponent_stones_captured = captures[opponent]
-
-        for r in range(self.board_size):
-            for c in range(self.board_size):
-                idx = r * self.board_size + c
-                if board[idx] == player:
-                    if self._is_stone_in_vulnerable_position(r, c, player, opponent, board):
-                        vulnerability_score += 1
-
-        winning_threshold = win_by_captures * 2
-        critical_threshold = self.capture_defense_cfg.get('critical_threshold', 8)
-        warning_threshold = self.capture_defense_cfg.get('warning_threshold', 6)
-        early_warning_threshold = self.capture_defense_cfg.get('early_warning_threshold', 4)
-
-        critical_penalty = self.capture_defense_cfg.get('critical_penalty', 800000)
-        warning_penalty = self.capture_defense_cfg.get('warning_penalty', 300000)
-        early_warning_penalty = self.capture_defense_cfg.get('early_warning_penalty', 150000)
-        desperate_penalty = self.capture_defense_cfg.get('desperate_penalty', 3000000)
-        trap_penalty = self.capture_defense_cfg.get('trap_detection_penalty', 400000)
-
-        base_penalty = trap_penalty * vulnerability_score
-
-        if opponent_stones_captured >= winning_threshold - 2:
-            return base_penalty + (desperate_penalty * vulnerability_score)
-        elif opponent_stones_captured >= critical_threshold:
-            return base_penalty + (critical_penalty * vulnerability_score)
-        elif opponent_stones_captured >= warning_threshold:
-            return base_penalty + (warning_penalty * vulnerability_score)
-        elif opponent_stones_captured >= early_warning_threshold:
-            return base_penalty + (early_warning_penalty * vulnerability_score)
-        else:
-            return base_penalty
-
-    def _is_stone_in_vulnerable_position(self, r, c, player, opponent, board):
-        """
-        Check if a stone at (r, c) is in a position where opponent could capture it.
-        """
-        for dr, dc in [(0, 1), (1, 0), (1, 1), (1, -1)]:
-            for direction in [1, -1]:
-                dr_check = dr * direction
-                dc_check = dc * direction
-
-                r1, c1 = r + dr_check, c + dc_check
-                r_before, c_before = r - dr_check, c - dc_check
-                r_after, c_after = r + 2 * dr_check, c + 2 * dc_check
-
-                if not (0 <= r1 < self.board_size and 0 <= c1 < self.board_size):
-                    continue
-
-                idx1 = r1 * self.board_size + c1
-                if board[idx1] == player:
-                    if (0 <= r_before < self.board_size and 0 <= c_before < self.board_size and
-                        0 <= r_after < self.board_size and 0 <= c_after < self.board_size):
-
-                        idx_before = r_before * self.board_size + c_before
-                        idx_after = r_after * self.board_size + c_after
-
-                        if (board[idx_before] == opponent and board[idx_after] == 0):
-                            return True
-                        if (board[idx_after] == opponent and board[idx_before] == 0):
-                            return True
-
-        # Check if surrounded by opponent stones
-        adjacent_opponent = 0
-        for dr, dc in [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
-            nr, nc = r + dr, c + dc
-            if (0 <= nr < self.board_size and 0 <= nc < self.board_size):
-                idx = nr * self.board_size + nc
-                if board[idx] == opponent:
-                    adjacent_opponent += 1
-
-        return adjacent_opponent >= 2
