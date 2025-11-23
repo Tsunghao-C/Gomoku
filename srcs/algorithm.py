@@ -31,6 +31,7 @@ class MinimaxAlgorithm:
         self.enable_lmr = algo_cfg.get("enable_late_move_reductions", True)
         self.lmr_threshold = algo_cfg.get("lmr_threshold", 4)
         self.lmr_reduction = algo_cfg.get("lmr_reduction", 1)
+        self.killer_moves_per_depth = algo_cfg.get("killer_moves_per_depth", 2)
 
         # Adaptive starting depth settings
         self.adaptive_cfg = algo_cfg.get("adaptive_starting_depth", {})
@@ -110,13 +111,27 @@ class MinimaxAlgorithm:
         best_score_so_far = -math.inf
         depth_reached = 0
 
-        # Always start from depth 1 for consistency
+        # Always start from depth 1 for consistency, unless adaptive is enabled
         # This ensures:
         # 1. Transposition table is populated progressively
         # 2. Move ordering improves iteratively
         # 3. Minimax logic is consistent across all game phases
         # 4. Easier to debug and understand search behavior
         start_depth = 1
+
+        if self.adaptive_cfg.get("enable", False):
+            if num_moves < self.adaptive_cfg.get("early_game_moves", 8):
+                start_depth = self.adaptive_cfg.get("early_game_depth", 1)
+            elif num_moves < self.adaptive_cfg.get("mid_early_moves", 15):
+                start_depth = self.adaptive_cfg.get("mid_early_depth", 3)
+            elif num_moves < self.adaptive_cfg.get("mid_game_moves", 25):
+                start_depth = self.adaptive_cfg.get("mid_game_depth", 4)
+            else:
+                start_depth = self.adaptive_cfg.get("late_game_depth", 5)
+
+            # Ensure start_depth doesn't exceed max_depth
+            start_depth = min(start_depth, self.max_depth)
+            print(f"Adaptive starting depth enabled: starting at {start_depth}")
 
         print(f"Starting iterative deepening from depth {start_depth}")
 
@@ -356,10 +371,11 @@ class MinimaxAlgorithm:
                 else:
                     # ENHANCED: Late Move Reduction
                     reduction = 0
-                    if depth >= 3 and move_number > 5 and best_score > -self.win_score * 0.5:
-                        reduction = 1
-                        if move_number > 10:
-                            reduction = 2
+                    if self.enable_lmr and depth >= 3 and move_number > self.lmr_threshold and best_score > -self.win_score * 0.5:
+                        reduction = self.lmr_reduction
+                        # Increase reduction for very late moves?
+                        if move_number > self.lmr_threshold * 2:
+                            reduction += 1
 
                     score = self.minimax(
                         (board, captures, new_hash), depth - 1 - reduction,
@@ -395,7 +411,7 @@ class MinimaxAlgorithm:
                     if depth not in self.killer_moves:
                         self.killer_moves[depth] = []
                     self.killer_moves[depth].append((r, c))
-                    if len(self.killer_moves[depth]) > 2:
+                    if len(self.killer_moves[depth]) > self.killer_moves_per_depth:
                         self.killer_moves[depth].pop(0)
 
                     # Update History Heuristic
@@ -433,10 +449,10 @@ class MinimaxAlgorithm:
                 else:
                     # ENHANCED: Late Move Reduction
                     reduction = 0
-                    if depth >= 3 and move_number > 5 and best_score < self.win_score * 0.5:
-                        reduction = 1
-                        if move_number > 10:
-                            reduction = 2
+                    if self.enable_lmr and depth >= 3 and move_number > self.lmr_threshold and best_score < self.win_score * 0.5:
+                        reduction = self.lmr_reduction
+                        if move_number > self.lmr_threshold * 2:
+                            reduction += 1
 
                     score = self.minimax(
                         (board, captures, new_hash), depth - 1 - reduction,
@@ -472,7 +488,7 @@ class MinimaxAlgorithm:
                     if depth not in self.killer_moves:
                         self.killer_moves[depth] = []
                     self.killer_moves[depth].append((r, c))
-                    if len(self.killer_moves[depth]) > 2:
+                    if len(self.killer_moves[depth]) > self.killer_moves_per_depth:
                         self.killer_moves[depth].pop(0)
 
                     # Update History Heuristic

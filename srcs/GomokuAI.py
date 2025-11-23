@@ -110,11 +110,23 @@ class GomokuAI:
 
         # Perform iterative deepening search with adaptive starting depth
         game_state = (board, captures, zobrist_hash)
-        best_move, best_score, depth_reached = self.algorithm.iterative_deepening_search(
-            game_state, ai_player, initial_board_score,
-            ordered_moves_wrapper, make_move_wrapper, undo_move_wrapper,
-            is_legal_wrapper, check_terminal_wrapper, num_moves
-        )
+
+        algo_cfg = self.config["algorithm_settings"]
+        if algo_cfg.get("enable_iterative_deepening", True):
+            best_move, best_score, depth_reached = self.algorithm.iterative_deepening_search(
+                game_state, ai_player, initial_board_score,
+                ordered_moves_wrapper, make_move_wrapper, undo_move_wrapper,
+                is_legal_wrapper, check_terminal_wrapper, num_moves
+            )
+        else:
+            # Fixed depth search
+            print(f"Iterative deepening disabled. Searching directly at depth {self.max_depth}")
+            best_move, best_score = self.algorithm.minimax_root(
+                game_state, ai_player, initial_board_score, self.max_depth,
+                ordered_moves_wrapper, make_move_wrapper, undo_move_wrapper,
+                is_legal_wrapper, check_terminal_wrapper
+            )
+            depth_reached = self.max_depth
 
         time_taken = time.time() - start_time
         self.last_move_time = time_taken
@@ -342,22 +354,36 @@ class GomokuAI:
         mid_priority.sort(reverse=True)
         low_priority.sort(reverse=True)
 
+        # Extract dynamic limits from config
+        move_ordering_cfg = self.config["ai_settings"]["move_ordering"]
+        adaptive_cfg = move_ordering_cfg["adaptive_move_limits"]
+        priority_cfg = move_ordering_cfg["priority_move_limits"]
+
         # Adaptive Limits
         if winning_moves:
-            return [move for score, move in winning_moves] # All winning moves
+            # Return all winning moves (capped at limit if huge, but usually 1-2)
+            limit = priority_cfg.get("winning_moves", 5)
+            return [move for score, move in winning_moves[:limit]]
 
         # If we have blocking moves, prioritize them but include some attacks
         if blocking_moves:
-            result = [move for score, move in blocking_moves[:6]]
-            result.extend([move for score, move in high_priority[:4]])
-            return result[:10]
+            block_limit = priority_cfg.get("blocking_moves", 6)
+            attack_limit = priority_cfg.get("high_priority_early", 6)  # Re-using this config for now
 
-        if num_moves < 10:
-            max_moves = 18
-        elif num_moves < 25:
-            max_moves = 14
+            result = [move for score, move in blocking_moves[:block_limit]]
+            result.extend([move for score, move in high_priority[:attack_limit]])
+
+            # Ensure we respect global limit roughly?
+            # Actually, for blocking scenarios, we want to be sure.
+            return result[:adaptive_cfg.get("early_game_limit", 18)]
+
+        # Determine max moves based on game phase
+        if num_moves < adaptive_cfg.get("early_game_moves", 10):
+            max_moves = adaptive_cfg.get("early_game_limit", 18)
+        elif num_moves < adaptive_cfg.get("mid_game_moves", 25):
+            max_moves = adaptive_cfg.get("mid_game_limit", 14)
         else:
-            max_moves = 12
+            max_moves = adaptive_cfg.get("late_game_limit", 12)
 
         result = []
         result.extend([move for score, move in high_priority])
@@ -437,7 +463,12 @@ class GomokuAI:
         # Separation distance ensures we don't merge far-apart groups
         # Padding adds space for 5-in-a-row development
         clusters = self.get_piece_clusters(board, separation_dist=4)
-        padding = 2
+
+        move_ordering_cfg = self.config["ai_settings"]["move_ordering"]
+        if not move_ordering_cfg.get("enable_windowed_search", True):
+             return self.get_relevant_moves(board)
+
+        padding = move_ordering_cfg.get("bounding_box_margin", 2)
 
         if not clusters:
              return self.get_relevant_moves(board) # Fallback
