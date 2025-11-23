@@ -1,176 +1,125 @@
-# Configuration Guide
+# Gomoku AI Configuration Guide
+
+This manual provides a comprehensive overview of the Gomoku AI configuration settings, explaining how each parameter influences the game's behavior and performance. It reflects the enhanced architecture featuring Delta Heuristic, Alpha-Beta Pruning, Iterative Deepening, and Zobrist Hashing optimizations.
+
+## Table of Contents
+1. [Overview](#overview)
+2. [Implementation Strategy & Enhancements](#implementation-strategy--enhancements)
+3. [Configuration Parameters](#configuration-parameters)
+    - [Game Settings](#game-settings)
+    - [Player Settings](#player-settings)
+    - [Algorithm Settings](#algorithm-settings)
+    - [Heuristic Settings](#heuristic-settings)
+    - [AI Settings & Move Ordering](#ai-settings--move-ordering)
+    - [UI Settings](#ui-settings)
+
+---
 
 ## Overview
 
-The Gomoku game now uses a centralized `config.json` file for all settings, making it easy to adjust game parameters without modifying code.
+The Gomoku AI uses a Minimax algorithm enhanced with Alpha-Beta pruning to search for the best move. To handle the large branching factor of Gomoku (19x19 board), we employ several optimizations:
+-   **Iterative Deepening:** Searching incrementally deeper (Depth 1, 2, 3...) to ensure we always have a "best guess" if time runs out.
+-   **Move Ordering:** Sorting moves by a quick heuristic score so the best moves are searched first, maximizing pruning.
+-   **Transposition Table (Zobrist Hashing):** Caching board positions to avoid re-calculating the same state.
+-   **Bitboard / 1D Array:** Optimized board representation for fast access.
+-   **Late Move Reduction (LMR) & Null Move Pruning:** Aggressive pruning techniques to skip unlikely branches.
 
-## Configuration File Location
+---
 
-The `config.json` file is located in the project root directory.
+## Implementation Strategy & Enhancements
 
-## Configuration Sections
+### 1. Core Game Logic (`srcs/GomokuLogic.py`)
+-   **Centralized Logic:** All rules (captures, double-three, win conditions) are encapsulated here, shared by both the GUI game and Headless AI.
+-   **1D Array Optimization:** The board is a flat list `[0..360]` instead of a 2D list, significantly improving cache locality and access speed.
+-   **Zobrist Hashing:** An incremental hash of the board state is maintained to instantly identify identical positions in the Transposition Table.
 
-### 1. `game_settings`
+### 2. AI Architecture (`srcs/GomokuAI.py` & `srcs/algorithm.py`)
+-   **Iterative Deepening:** The AI strictly respects the `time_limit`. It starts at depth 1 and goes deeper until time runs out.
+-   **Aspiration Windows:** Instead of searching $-\infty$ to $+\infty$, we search a narrow window around the previous score. If the score falls outside, we re-search. This works well because board scores usually change gradually.
+-   **History Heuristic:** We track moves that caused "cutoffs" (proved a branch was bad) and prioritize them in future searches.
+-   **Clustering & Windowed Search:** instead of scanning the whole board, the AI identifies clusters of stones and only searches within those bounding boxes.
 
-Basic game rules and board setup:
+### 3. Heuristic Evaluation (`srcs/heuristic.py`)
+-   **Numeric Pattern Matching:** Instead of slow string comparisons, we use tuple-based pattern matching on integer arrays.
+-   **Evaluation:** We evaluate the board based on patterns (Open 4, Broken 3, etc.) and assign scores defined in `config.json`.
 
-- `board_size`: Size of the board (default: 15)
-- `win_by_captures`: Number of captures needed to win (default: 5 pairs = 10 pieces)
-- `empty`, `black_player`, `white_player`: Player identifiers
-- `default_game_mode`: Starting game mode ("P_VS_AI" or "P_VS_P")
+---
 
-### 2. `player_settings`
+## Configuration Parameters (`config.json`)
 
-Player configuration:
-
-- `ai_player`: Which player the AI controls (1=Black, 2=White)
-- `human_player`: Which player the human controls
-- `starting_player`: Who moves first
-
-### 3. `algorithm_settings`
-
-AI search algorithm configuration:
-
-- `max_depth`: Maximum search depth (default: 12)
-- `time_limit`: Time limit per move in seconds (default: 3.0)
-- `enable_iterative_deepening`: Enable/disable iterative deepening
-- `enable_aspiration_windows`: Enable/disable aspiration window optimization
-- `enable_null_move_pruning`: Enable/disable null move pruning
-- `enable_late_move_reductions`: Enable/disable late move reductions
-- `enable_killer_moves`: Enable/disable killer moves heuristic
-
-**Adaptive Starting Depth:**
-Controls which depth the iterative deepening starts from based on game phase:
-- `enable`: Enable adaptive starting depth
-- `early_game_moves`: Move count threshold for early game (default: 8)
-- `early_game_depth`: Starting depth for early game (default: 1)
-- `mid_early_moves`: Move count threshold for mid-early game (default: 15)
-- `mid_early_depth`: Starting depth for mid-early game (default: 3)
-- `mid_game_moves`: Move count threshold for mid game (default: 25)
-- `mid_game_depth`: Starting depth for mid game (default: 4)
-- `late_game_depth`: Starting depth for late game (default: 5)
-
-### 4. `heuristic_settings`
-
-Pattern evaluation scores:
-
-**`scores`** sub-section defines point values for different board patterns:
-
-- `win_score`: Score for winning position (default: 1,000,000,000)
-- `pending_win_score`: Score for 5-in-a-row (default: 50,000,000)
-- `open_four`: Score for open four (_OOOO_) (default: 1,000,000)
-- `broken_four`: Score for broken four (default: 400,000)
-- `closed_four`: Score for closed four (default: 50,000)
-- `open_three`: Score for open three (_OOO_) (default: 10,000)
-- `broken_three`: Score for broken three (default: 4,000)
-- `closed_three`: Score for closed three (default: 5,000)
-- `open_two`: Score for open two (default: 100)
-- `closed_two`: Score for closed two (default: 10)
-- `capture_threat_open`: Score for capture threat (default: 30,000)
-- `capture_score`: Score per captured pair (default: 5,000)
-- `capture_setup_bridge`: Score for capture setup (default: 1,000)
-
-**`capture_defense`** sub-section controls AI defensive behavior when opponent is close to winning by captures:
-
-- `enable`: Enable/disable capture defense mechanism (default: true)
-- `critical_threshold`: Stone count when AI becomes highly defensive (default: 8)
-  - When opponent has this many stones, AI heavily penalizes vulnerable moves
-- `warning_threshold`: Stone count when AI starts being cautious (default: 6)
-  - When opponent has this many stones, AI moderately penalizes vulnerable moves
-- `critical_penalty`: Penalty per vulnerable pair in critical zone (default: 500,000)
-- `warning_penalty`: Penalty per vulnerable pair in warning zone (default: 100,000)
-- `desperate_penalty`: Penalty when opponent is 1 capture from winning (default: 2,000,000)
-
-**How Capture Defense Works:**
-When the opponent has captured many stones (e.g., 8 out of 10 needed to win), the AI becomes defensive and avoids placing stones that would create vulnerable pairs (two adjacent stones that could be captured). The penalty scales with:
-1. How close the opponent is to winning
-2. How many pairs the move makes vulnerable
-
-This prevents the AI from carelessly giving the opponent the final capture needed to win.
-
-### 5. `ai_settings`
-
-AI-specific behavior configuration:
-
-- `relevance_range`: Distance from existing pieces to consider (default: 1)
-
-**`move_ordering`** sub-section:
-- `enable_windowed_search`: Enable bounded search space
-- `windowed_search_from_move`: Start windowed search from this move (default: 10)
-- `bounding_box_margin`: Margin around pieces for bounding box (default: 2)
-- **`adaptive_move_limits`**: Number of moves to consider at each game phase
-  - `early_game_moves`, `early_game_limit`
-  - `mid_game_moves`, `mid_game_limit`
-  - `late_game_limit`
-- **`priority_move_limits`**: Limits for each priority tier
-  - `winning_moves`, `blocking_moves`
-  - `high_priority_early`, `high_priority_mid`
-  - `mid_priority_factor`
-
-### 6. `ui_settings`
-
-Visual appearance and UI configuration:
-
-**`window`**:
-- `square_size`: Size of each board square in pixels (default: 40)
-- `margin`: Margin around the board (default: 40)
-- `bottom_bar_height`: Height of capture display bar (default: 40)
-
-**`colors`**: RGB color values for various UI elements
-- `board`, `black`, `white`, `grid`, `text`, `capture_bg`, `illegal`, `highlight`
-
-**`fonts`**:
-- `main_font`: Font family (default: "Inter")
-- `main_font_size`: Font size (default: 24)
-
-**`animation`**:
-- `pulse_speed`: Speed of pulsing animation for pending win (default: 4)
-
-## Customization Tips
-
-### Making AI Stronger
-- Increase `max_depth` (but this will slow down moves)
-- Increase `time_limit` to allow deeper search
-- Enable all optimization flags
-- Adjust `adaptive_starting_depth` to start deeper
-
-### Making AI Faster
-- Decrease `max_depth`
-- Decrease `time_limit`
-- Reduce `adaptive_move_limits` values
-- Enable `windowed_search` earlier
-
-### Tuning Heuristics
-- Adjust pattern scores to change AI's playing style
-- Increase `capture_score` to make AI more aggressive with captures
-- Increase `open_four` to make AI prioritize four-in-a-row threats
-- Adjust `capture_defense` thresholds to control defensive behavior:
-  - Lower `critical_threshold` to make AI defensive earlier
-  - Increase penalties to make AI even more cautious
-  - Disable `enable` to turn off defensive behavior entirely
-
-### UI Customization
-- Change `colors` to customize the look
-- Adjust `square_size` and `margin` to change board size
-- Change `font` settings for different text appearance
-
-## Validation
-
-The game validates the config file on startup. If the JSON is invalid or missing required fields, it will display an error message and exit.
-
-## Example: Quick Game Mode
-
-For fast testing, you can create a `config_fast.json`:
-
+### Game Settings
 ```json
-{
-  "algorithm_settings": {
-    "max_depth": 6,
-    "time_limit": 1.0,
-    ...
-  }
+"game_settings": {
+  "board_size": 19,       // Standard Gomoku board size
+  "win_by_captures": 5,   // Number of capture pairs (10 stones) to win
+  "empty": 0,             // Internal value for empty cell
+  "black_player": 1,      // Internal value for Black
+  "white_player": 2,      // Internal value for White
+  "default_game_mode": "P_VS_AI" // Default mode on launch
 }
 ```
 
-Then modify `Gomoku.py` to load your custom config file.
+### Algorithm Settings
+These control the depth and speed of the AI search.
 
+| Parameter | Description | Recommended |
+| :--- | :--- | :--- |
+| `max_depth` | The absolute maximum depth the AI will attempt. | `12` |
+| `time_limit` | **CRITICAL**. Maximum time (seconds) the AI can think. | `0.5` - `1.5` |
+| `enable_iterative_deepening` | Must be `true` to respect time limits. | `true` |
+| `enable_aspiration_windows` | Narrow search window for performance. | `true` |
+| `aspiration_window_delta` | How much the score can fluctuate before re-search. | `500000` |
+| `enable_null_move_pruning` | Skips turns in search to prove position safety. | `true` |
+| `enable_late_move_reductions` | Searches "bad" moves with reduced depth. | `true` |
+| `lmr_threshold` | Move index after which LMR starts (e.g., 4th best move). | `3` |
+| `lmr_reduction` | How many depth levels to reduce for late moves. | `2` |
+| `enable_killer_moves` | Tracks "killer" moves that caused cutoffs. | `true` |
+| `killer_moves_per_depth` | Number of killer moves to store per depth. | `2` |
+
+**Adaptive Starting Depth (Optional)**
+This section allows the AI to skip early depths (e.g., start at Depth 4) later in the game when the tree is stable.
+*   `enable`: Set to `true` to turn on.
+*   `*_game_moves`: The turn number defining the phase.
+*   `*_game_depth`: The starting depth for that phase.
+
+### Heuristic Settings
+Defines the score values for board patterns.
+
+| Pattern | Description | Score Impact |
+| :--- | :--- | :--- |
+| `win_score` | 5-in-a-row or capture win. | Very High (1B) |
+| `pending_win_score` | Unstoppable 5-in-a-row (unless blocked). | High (50M) |
+| `open_four` | Four stones open on both ends (immediate win threat). | 1M |
+| `broken_four` | Four stones with a gap or blocked on one side. | 400k |
+| `open_three` | Three stones open on both ends. | 10k |
+| `capture_score` | Bonus for capturing a pair. | 2.5k |
+
+**Capture Defense**
+*   `enable`: If `true`, the AI specifically checks for stones vulnerable to capture and penalizes those positions.
+*   `critical_penalty`: Score penalty for losing a stone when capture count is high.
+
+### AI Settings & Move Ordering
+These settings control **Branching Factor** - how many moves the AI considers at each step.
+
+| Parameter | Description | Optimization Strategy |
+| :--- | :--- | :--- |
+| `relevance_range` | How far from existing stones to look for moves. | `1` |
+| `enable_windowed_search` | Use bounding boxes (clusters) to limit search area. | `true` |
+| `bounding_box_margin` | Extra space around stone clusters. | `2` |
+
+**Adaptive Move Limits**
+Dynamically adjusts the number of moves checked based on the game phase.
+*   `early_game_limit`: Few moves needed early on (e.g., `8`).
+*   `mid_game_limit`: More complex, need slightly fewer focused moves or more? Actually fewer is better for depth. (e.g., `6`).
+*   `late_game_limit`: Board is crowded, fewer valid good moves (e.g., `6`).
+
+**Priority Move Limits**
+*   `winning_moves`: If a winning move is found, how many to check? Usually `5`.
+*   `blocking_moves`: If we must block, only check top `4` blocking moves.
+
+### UI Settings
+Controls the Pygame window appearance.
+*   `square_size`: Size of grid cells in pixels.
+*   `margin`: Board margin.
+*   `colors`: RGB values for board, pieces, etc.
+*   `animation`: Pulse speed for winning line highlight.
