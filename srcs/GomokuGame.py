@@ -442,7 +442,10 @@ class GomokuGame:
                                     label.get_width() // 2, self.MARGIN - 30))
 
         # Draw star points
-        star_points = [(3, 3), (3, 11), (11, 3), (11, 11), (7, 7)]
+        quarter = int((self.BOARD_SIZE - 1) / 4)
+        middle = int((self.BOARD_SIZE - 1) / 2)
+        third_qtr = 2 * middle - quarter
+        star_points = [(quarter, quarter), (quarter, third_qtr), (third_qtr, quarter), (third_qtr, third_qtr), (middle, middle)]
         for r, c in star_points:
             cx = self.MARGIN + self.SQUARE_SIZE // 2 + c * self.SQUARE_SIZE
             cy = self.MARGIN + self.SQUARE_SIZE // 2 + r * self.SQUARE_SIZE
