@@ -32,6 +32,7 @@ class MinimaxAlgorithm:
         self.lmr_threshold = algo_cfg.get("lmr_threshold", 4)
         self.lmr_reduction = algo_cfg.get("lmr_reduction", 1)
         self.killer_moves_per_depth = algo_cfg.get("killer_moves_per_depth", 2)
+        self.enable_killer_moves = algo_cfg.get("enable_killer_moves", True)
 
         # Adaptive starting depth settings
         self.adaptive_cfg = algo_cfg.get("adaptive_starting_depth", {})
@@ -408,11 +409,12 @@ class MinimaxAlgorithm:
 
                 if beta <= alpha:
                     # Store killer move
-                    if depth not in self.killer_moves:
-                        self.killer_moves[depth] = []
-                    self.killer_moves[depth].append((r, c))
-                    if len(self.killer_moves[depth]) > self.killer_moves_per_depth:
-                        self.killer_moves[depth].pop(0)
+                    if self.enable_killer_moves:
+                        if depth not in self.killer_moves:
+                            self.killer_moves[depth] = []
+                        self.killer_moves[depth].append((r, c))
+                        if len(self.killer_moves[depth]) > self.killer_moves_per_depth:
+                            self.killer_moves[depth].pop(0)
 
                     # Update History Heuristic
                     # Bonus proportional to depth squared (deeper cutoffs are more valuable)
@@ -485,11 +487,12 @@ class MinimaxAlgorithm:
 
                 if beta <= alpha:
                     # Store killer move
-                    if depth not in self.killer_moves:
-                        self.killer_moves[depth] = []
-                    self.killer_moves[depth].append((r, c))
-                    if len(self.killer_moves[depth]) > self.killer_moves_per_depth:
-                        self.killer_moves[depth].pop(0)
+                    if self.enable_killer_moves:
+                        if depth not in self.killer_moves:
+                            self.killer_moves[depth] = []
+                        self.killer_moves[depth].append((r, c))
+                        if len(self.killer_moves[depth]) > self.killer_moves_per_depth:
+                            self.killer_moves[depth].pop(0)
 
                     # Update History Heuristic
                     self.history_table[(r, c)] = self.history_table.get((r, c), 0) + depth * depth

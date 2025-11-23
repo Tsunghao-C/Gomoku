@@ -46,8 +46,6 @@ class GomokuLogic:
         """Initializes the Zobrist hash table with random values."""
         # Use 1D array for zobrist table for cache locality
         # Size: BOARD_SIZE * BOARD_SIZE * 3 (EMPTY, BLACK, WHITE)
-        # Actually, let's keep it as [size*size][3] list of lists for easy indexing
-        # Or flatten everything? Let's flatten the board dimension.
         self.zobrist_table = [[0] * 3 for _ in range(self.BOARD_SIZE * self.BOARD_SIZE)]
 
         for i in range(self.BOARD_SIZE * self.BOARD_SIZE):

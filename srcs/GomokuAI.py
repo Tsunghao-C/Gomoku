@@ -455,8 +455,9 @@ class GomokuAI:
         """
         relevant_moves = set()
 
-        # Early game (< 6 moves): Use standard neighbor search
-        if num_moves < 6:
+        # Early game (< windowed_search_from_move): Use standard neighbor search
+        window_start_move = self.config["ai_settings"]["move_ordering"].get("windowed_search_from_move", 10)
+        if num_moves < window_start_move:
             return self.get_relevant_moves(board)
 
         # Get multiple windows based on clusters

@@ -105,6 +105,7 @@ These settings control **Branching Factor** - how many moves the AI considers at
 | :--- | :--- | :--- |
 | `relevance_range` | How far from existing stones to look for moves. | `1` |
 | `enable_windowed_search` | Use bounding boxes (clusters) to limit search area. | `true` |
+| `windowed_search_from_move` | Turn number to start using windowed search. | `10` |
 | `bounding_box_margin` | Extra space around stone clusters. | `2` |
 
 **Adaptive Move Limits**

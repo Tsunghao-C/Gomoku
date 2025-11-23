@@ -65,9 +65,7 @@
       "warning_penalty": 300000,
       "early_warning_penalty": 150000,
       "desperate_penalty": 3000000,
-      "trap_detection_penalty": 400000,
-      "always_check_vulnerability": true,
-      "immediate_capture_penalty": 5000000
+      "trap_detection_penalty": 400000
     }
   },
   
