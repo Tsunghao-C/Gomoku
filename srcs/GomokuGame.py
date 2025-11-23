@@ -118,9 +118,6 @@ class GomokuGame:
         # Suggested Move (for P_VS_P_SUGGESTED mode)
         self.suggested_move = None
 
-        # Zobrist Hashing
-        # Managed by GomokuLogic
-
         # AI
         self.ai = GomokuAI(config)
 

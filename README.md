@@ -35,14 +35,17 @@ gomoku/
 - Initializes and runs the game
 - Simple, clean entry point
 
-#### **srcs/GomokuGame.py** - Game Logic & UI
-- Game state management (board, captures, current player)
+#### **srcs/GomokuGame.py** - Game UI
+- Major game instance orchestrator
+- UI rendering with pygame
+- Event handling (mouse, keyboard)
+
+#### **srcs/GomokuLogic.py** - Game Logic
+- Game state management: Optimized with 1D array
+- Zobrist hashing: A unique ID used to cache and compare board state
 - Move validation and execution
 - Capture detection
 - Win condition checking
-- Zobrist hashing for position caching
-- UI rendering with pygame
-- Event handling (mouse, keyboard)
 
 #### **srcs/GomokuAI.py** - AI Coordination
 - Coordinates algorithm and heuristic modules
