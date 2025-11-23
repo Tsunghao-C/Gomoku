@@ -41,8 +41,6 @@ Controls the Minimax search behavior and pruning optimizations. These are the mo
 | `enable_late_move_reductions` | bool | true | Reduces depth for "bad" moves. | **Performance**. Moves sorted late in the list are searched with reduced depth. |
 | `lmr_threshold` | int | 3 | Index of move to start LMR. | The first 3 moves are searched fully. The 4th+ are reduced. |
 | `lmr_reduction` | int | 2 | Depth reduction for LMR. | Late moves are searched at `depth - 2`. |
-| `enable_killer_moves` | bool | true | Prioritize moves that caused cutoffs. | **Ordering**. Checks moves that were "killers" at the same depth in other branches first. |
-| `killer_moves_per_depth` | int | 2 | Number of killer moves to store. | Usually 2 is optimal. |
 | `adaptive_starting_depth` | dict | - | Config for starting search depth. | **Disabled**. Currently set to start at depth 1 for consistency. |
 
 ## 4. Heuristic Settings (`heuristic_settings`)

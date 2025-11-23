@@ -31,8 +31,6 @@ class MinimaxAlgorithm:
         self.enable_lmr = algo_cfg.get("enable_late_move_reductions", True)
         self.lmr_threshold = algo_cfg.get("lmr_threshold", 4)
         self.lmr_reduction = algo_cfg.get("lmr_reduction", 1)
-        self.killer_moves_per_depth = algo_cfg.get("killer_moves_per_depth", 2)
-        self.enable_killer_moves = algo_cfg.get("enable_killer_moves", True)
 
         # Adaptive starting depth settings
         self.adaptive_cfg = algo_cfg.get("adaptive_starting_depth", {})
@@ -51,9 +49,6 @@ class MinimaxAlgorithm:
         self.search_start_time = 0
         self.current_depth = 0
 
-        # Killer moves heuristic
-        self.killer_moves = {}  # {depth: [(r1,c1), (r2,c2)]}
-
         # History Heuristic
         # Stores score for moves that caused a beta cutoff
         # Key: (r, c), Value: score
@@ -62,11 +57,6 @@ class MinimaxAlgorithm:
     def clear_transposition_table(self):
         """Clears the transposition table."""
         self.transposition_table.clear()
-        self.killer_moves.clear()
-        # We usually keep history table between moves?
-        # Or clear it? Some engines clear, some decay.
-        # For simplicity and to adapt to new board state, let's clear or decay.
-        # Let's clear for now to be safe against stale history.
         self.history_table.clear()
 
     def get_history_score(self, r, c):
@@ -408,14 +398,6 @@ class MinimaxAlgorithm:
                     flag = 'EXACT'
 
                 if beta <= alpha:
-                    # Store killer move
-                    if self.enable_killer_moves:
-                        if depth not in self.killer_moves:
-                            self.killer_moves[depth] = []
-                        self.killer_moves[depth].append((r, c))
-                        if len(self.killer_moves[depth]) > self.killer_moves_per_depth:
-                            self.killer_moves[depth].pop(0)
-
                     # Update History Heuristic
                     # Bonus proportional to depth squared (deeper cutoffs are more valuable)
                     self.history_table[(r, c)] = self.history_table.get((r, c), 0) + depth * depth
@@ -486,14 +468,6 @@ class MinimaxAlgorithm:
                     flag = 'EXACT'
 
                 if beta <= alpha:
-                    # Store killer move
-                    if self.enable_killer_moves:
-                        if depth not in self.killer_moves:
-                            self.killer_moves[depth] = []
-                        self.killer_moves[depth].append((r, c))
-                        if len(self.killer_moves[depth]) > self.killer_moves_per_depth:
-                            self.killer_moves[depth].pop(0)
-
                     # Update History Heuristic
                     self.history_table[(r, c)] = self.history_table.get((r, c), 0) + depth * depth
 
