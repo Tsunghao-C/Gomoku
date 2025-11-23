@@ -1,196 +1,79 @@
 # Gomoku AI Project
 
-A sophisticated Gomoku (Five in a Row) game with an intelligent AI opponent, featuring multiple optimizations and a modular architecture.
+A sophisticated Gomoku (Five in a Row) game with an intelligent AI opponent, featuring multiple optimizations, a modular architecture, and modern game features.
 
 ## 🎮 Game Features
 
-- **Capture Rule**: Capture opponent's pairs using the P-O-O-P pattern
-- **Win Conditions**: Win by 5 captures or 5-in-a-row
-- **Pending Win State**: When a player creates 5-in-a-row, opponent gets one turn to break it
-- **Double-Three Rule**: Cannot create two open threes simultaneously (illegal move)
-- **Interactive UI**: Clean pygame-based interface with hover indicators and visual feedback
+-   **Capture Rule (P-O-O-P)**: You can capture an opponent's pair of stones by flanking them (e.g., `X O O X` -> `X _ _ X`).
+-   **Win Conditions**:
+    1.  **5-in-a-row**: Standard victory condition.
+    2.  **5 Captures**: First player to capture 5 pairs (10 stones) wins.
+-   **Win Prevention**: If the opponent makes a move that creates a 5-in-a-row, but you can capture a pair that breaks that line, the win is canceled.
+-   **Critical Capture Logic**: The AI recognizes when it (or you) is one pair away from winning by captures and treats capture threats as deadly winning moves.
+-   **Game Modes**:
+    -   **Player vs AI**: Challenge the minimax engine.
+    -   **Player vs Player**: Local multiplayer.
+    -   **PvP (Suggested)**: Play against a friend, but with AI suggestions for the White player (great for learning).
+-   **Interactive UI**: Pygame-based interface with hover effects, menus, move highlighting, and status displays.
 
 ## 🏗️ Modular Architecture
 
-The code has been refactored into a clean, maintainable modular structure:
+The codebase is organized for clarity and performance:
 
 ```
 gomoku/
-├── Gomoku.py                    # Entry point - starts the game
+├── Gomoku.py                    # Entry point
+├── config.json                  # Centralized configuration (rules, AI, UI)
 ├── srcs/
-│   ├── __init__.py              # Package initialization
-│   ├── GomokuGame.py            # Game state, rules, and UI rendering
-│   ├── GomokuAI.py              # AI operations and move generation
-│   ├── algorithm.py             # Minimax with optimizations
-│   ├── heuristic.py             # Pattern evaluation and scoring
-│   └── utils.py                 # Shared utility functions
-├── old/                         # Previous optimization iterations
-├── pyproject.toml               # Project configuration
-└── README.md                    # This file
+│   ├── GomokuLogic.py           # Core Engine: Board state (1D), rules, captures
+│   ├── GomokuAI.py              # AI Brain: Move generation, sorting, strategy
+│   ├── algorithm.py             # Search: Minimax, Alpha-Beta, PVS, ID
+│   ├── heuristic.py             # Evaluation: Pattern matching (Numeric/Tuple based)
+│   ├── GomokuGame.py            # GUI: Pygame rendering, input handling, menu
+│   └── utils.py                 # Utilities
+└── docs/
+    ├── IMPLEMENTATION_MANUAL.md # Detailed technical overview
+    └── CONFIG_REFERENCE.md      # Explanation of config.json parameters
 ```
-
-### Module Responsibilities
-
-#### **Gomoku.py** - Entry Point
-- Initializes and runs the game
-- Simple, clean entry point
-
-#### **srcs/GomokuGame.py** - Game UI
-- Major game instance orchestrator
-- UI rendering with pygame
-- Event handling (mouse, keyboard)
-
-#### **srcs/GomokuLogic.py** - Game Logic
-- Game state management: Optimized with 1D array
-- Zobrist hashing: A unique ID used to cache and compare board state
-- Move validation and execution
-- Capture detection
-- Win condition checking
-
-#### **srcs/GomokuAI.py** - AI Coordination
-- Coordinates algorithm and heuristic modules
-- Move generation and ordering
-- Delta heuristic calculation
-- Relevant move filtering (reduces branching factor)
-- AI state management
-
-#### **srcs/algorithm.py** - AI Thinking
-- Minimax algorithm implementation
-- Alpha-beta pruning optimization
-- Iterative deepening search
-- Transposition table for position caching
-- Time management and timeout handling
-
-#### **srcs/heuristic.py** - AI Brain
-- Pattern recognition (open four, closed four, broken patterns, etc.)
-- Position evaluation
-- Scoring constants and weights
-- Line analysis and threat detection
-
-#### **srcs/utils.py** - Shared Utilities
-- Line string generation for pattern matching
-- Coordinate calculations
-- Helper functions used across modules
 
 ## 🚀 Running the Game
 
 ```bash
-# Using uv (recommended)
+# Recommended: using uv
 uv run Gomoku.py
 
-# Or using python directly
+# Or standard python
 python3 Gomoku.py
 ```
 
 ## 🎯 Controls
 
-- **Mouse Click**: Place a piece (Human player)
-- **R**: Reset game
-- **M**: Toggle game mode (Player vs AI / Player vs Player)
+-   **Mouse Click**: Place stone / Select menu option
+-   **ESC**: Return to Main Menu
+-   **R**: Reset current game
 
 ## 🧠 AI Optimizations
 
-### 1. **Minimax Algorithm**
-Core decision-making algorithm where AI (maximizer) seeks best moves while simulating opponent (minimizer) responses.
+The AI achieves high performance (12+ ply search depth in <1s) using a combination of techniques:
 
-### 2. **Alpha-Beta Pruning**
-Eliminates branches that cannot affect the final decision, dramatically reducing search space.
-
-### 3. **Iterative Deepening**
-Progressively searches deeper levels, ensuring best move is found within time limit.
-
-### 4. **Delta Heuristic** ⭐
-Instead of re-evaluating the entire board at each node, calculates only the *change* (delta) in evaluation. This optimization allows searching to depth 14+ instead of 4-6.
-
-### 5. **Zobrist Hashing**
-Fast board position hashing for efficient transposition table lookups.
-
-### 6. **Transposition Table**
-Caches previously evaluated positions to avoid redundant calculations.
-
-### 7. **Move Ordering**
-Evaluates and orders moves locally before searching, ensuring best moves are examined first for better pruning.
-
-### 8. **Relevance Range Filtering**
-Only considers moves within range of existing pieces, reducing branching factor from 225 to typically 20-40 moves.
-
-### 9. **Enhanced Pattern Recognition**
-- Open Four: `_OOOO_` (immediate threat)
-- Broken Four: `_OO_OO_`, `_O_OOO_` (forcing moves)
-- Capture Threats: `POOE`, `EOOP` (setup captures)
-- Capture Setups: `POEP` (bridge patterns)
-- Open Three: `_OOO_`
-- Broken Three: `_O_O_O_`
-- And more...
-
-## 📊 Performance
-
-- **Search Depth**: 14 levels (with delta heuristic)
-- **Time Limit**: 2 seconds per move
-- **Branching Factor**: Reduced from ~225 to ~20-40 through relevance filtering
-- **Positions Evaluated**: Thousands per move with caching
+1.  **1D Board Representation**: Optimized memory layout for fast access.
+2.  **Numeric Pattern Matching**: Fast tuple-based pattern recognition (replacing slow string regex).
+3.  **Iterative Deepening**: Ensures the best move is always ready within the time limit.
+4.  **Transposition Table (Zobrist Hashing)**: Caches evaluations of identical board states.
+5.  **Principal Variation Search (PVS)**: Searches the most promising moves first.
+6.  **Late Move Reductions (LMR)**: Prunes search depth for unlikely moves.
+7.  **Null Move Pruning**: Skips branches where passing is safe.
+8.  **Windowed Search**: Restricts analysis to relevant areas ("clusters") of the board.
+9.  **Static Evaluation Sort**: Rapidly orders candidate moves without full simulation.
 
 ## 🔧 Configuration
 
-Key constants in `srcs/GomokuGame.py`:
-
-```python
-BOARD_SIZE = 15              # Board dimensions
-AI_MAX_DEPTH = 14            # Maximum search depth
-AI_TIME_LIMIT = 2.0          # Time limit per move (seconds)
-AI_RELEVANCE_RANGE = 2       # Move filtering range
-WIN_BY_CAPTURES = 5          # Pairs needed to win
-```
-
-## 📈 Development History
-
-The project evolved through multiple optimization iterations:
-
-1. **M1-M4**: Basic game logic and UI
-2. **M5-M6**: Initial AI with basic minimax
-3. **M7**: Alpha-beta pruning
-4. **M8**: Improved heuristics
-5. **M9**: Zobrist hashing and transposition tables
-6. **M10**: Delta heuristic (major performance boost)
-7. **M11**: Enhanced pattern recognition
-8. **Current**: Modular refactoring for maintainability
-
-Previous versions are preserved in the `old/` directory.
-
-## 🎓 Key Concepts
-
-### Minimax Algorithm
-Two-player zero-sum game algorithm where one player maximizes score and the other minimizes it.
-
-### Alpha-Beta Pruning
-Ignores branches that are proven to be worse than previously examined moves.
-
-### Depth Limiting
-Limits recursion depth to balance computation time, using evaluation functions at leaf nodes.
-
-### Evaluation Function
-Calculates position advantage by analyzing patterns, threats, and strategic positions. Can be enhanced with machine learning.
-
-### Delta Heuristic
-Incremental evaluation technique that calculates only the change in score rather than full board re-evaluation.
-
-## 📝 Future Enhancements
-
-1. **Machine Learning Integration**: Train neural networks for better position evaluation
-2. **Opening Book**: Pre-computed strong opening sequences
-3. **Endgame Tablebase**: Perfect play in endgame positions
-4. **Monte Carlo Tree Search**: Alternative to minimax for certain positions
-5. **Parallel Search**: Multi-threaded move exploration
-6. **Move History**: Undo/redo functionality
-7. **Game Analysis**: Post-game review and analysis tools
+All game parameters are tweakable in `config.json`.
+See [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for a detailed guide on every parameter.
 
 ## 📜 License
 
 See LICENSE file for details.
-
-## 🤝 Contributing
-
-This is an educational project. Feel free to fork and experiment with your own optimizations!
 
 ---
 

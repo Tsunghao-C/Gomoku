@@ -36,32 +36,10 @@ The game is built using a modular architecture with a clear separation of concer
 2.  **Suggested Mode**: In PvP, the AI runs in the background for the White player and visually suggests the best move.
 3.  **Capture Rules**: Fully implements the standard P-O-O-P capture rule and "Win by 5 Captures".
 
-## 3. Configuration Guide (`config.json`)
+## 3. Configuration Guide
 
-### `algorithm_settings`
-*   `max_depth`: Hard limit on search depth (default: 12).
-*   `time_limit`: Maximum time (seconds) the AI can think per move (default: 0.5s).
-*   `enable_iterative_deepening`: Must be `true` for time management.
-*   `aspiration_window_delta`: Window size for aspiration search (default: 500,000). Narrows the alpha-beta window around the previous score to prune more branches.
-*   `enable_late_move_reductions`: Enable LMR (default: `true`).
-*   `lmr_threshold`: Move index after which LMR kicks in (default: 3).
-*   `lmr_reduction`: Depth reduction amount for late moves (default: 2).
-*   `enable_killer_moves`: Prioritize moves that caused cutoffs at the same depth (default: `true`).
+All configuration parameters are defined in `config.json`.
+For a detailed explanation of every parameter and its effect on the game, please refer to:
 
-### `heuristic_settings.scores`
-*   `win_score`: Score for 5-in-a-row (1,000,000,000).
-*   `pending_win_score`: Score for an unstoppable win (e.g., Open Four) or a critical capture threat (50,000,000).
-*   `broken_four`, `closed_four`: Scores for potential 4-lines.
-*   `open_three`, `broken_three`: Scores for 3-lines.
-*   `capture_threat_open`: Score for a pattern that threatens a capture (15,000).
-*   `capture_score`: Score bonus for actually capturing a pair (20,000).
-
-### `ai_settings`
-*   `relevance_range`: How far from existing stones to look for new moves (default: 1).
-*   `move_ordering`:
-    *   `enable_windowed_search`: Restrict search to clusters (default: `true`).
-    *   `windowed_search_from_move`: Turn number to start windowed search (default: 10).
-    *   `bounding_box_margin`: Extra space around clusters (default: 2).
-    *   `adaptive_move_limits`: Max moves to examine per branch, changing by game phase (Early: 8, Mid: 6, Late: 6). This is crucial for branching factor control.
-    *   `priority_move_limits`: Specific limits for "Winning" or "Blocking" moves (ensures we always look at forced moves).
+👉 **[Configuration Reference (docs/CONFIG_REFERENCE.md)](CONFIG_REFERENCE.md)**
 
