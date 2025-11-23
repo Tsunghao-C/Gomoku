@@ -63,7 +63,6 @@ class GomokuGame:
         ai_cfg = config.get("ai_settings", {})
         debug_cfg = ai_cfg.get("debug", {})
         self.debug_verbose = debug_cfg.get("verbose", False)
-        self.debug_terminal_states = debug_cfg.get("show_terminal_states", False)
 
         # Initialize Pygame
         pygame.init()

@@ -39,9 +39,6 @@ class GomokuAI:
         # Debug settings
         debug_cfg = ai_cfg.get("debug", {})
         self.debug_verbose = debug_cfg.get("verbose", False)
-        self.debug_critical_moves = debug_cfg.get("show_critical_moves", False)
-        self.debug_move_scores = debug_cfg.get("show_move_scores", False)
-        self.debug_move_categories = debug_cfg.get("show_move_categories", False)
 
         # Initialize algorithm and heuristic with config
         self.algorithm = MinimaxAlgorithm(config)
@@ -558,49 +555,6 @@ class GomokuAI:
                     captured.append((nr2, nc2))
 
         return captured
-
-    def _evaluate_with_captures(self, r, c, player, board):
-        """
-        Evaluate a move INCLUDING the effects of captures.
-        Uses make/undo pattern: temporarily modifies board then restores it.
-
-        Returns:
-            tuple: (score, num_capture_pairs)
-        """
-        opponent = 2 if player == 1 else 1
-
-        # Step 1: Find what would be captured
-        capture_positions = self._get_capture_positions(r, c, player, board)
-
-        # Note: We can't easily get capture count inside this fast evaluation method
-        # So we default critical check to False for this specific estimation method
-        # unless we pass captures dict, which requires changing signature extensively.
-        # For now, standard evaluation is safer.
-
-        if not capture_positions:
-            # No captures, just evaluate normally
-            score = self.heuristic.score_lines_at(r, c, board, player, opponent)
-            return score, 0
-
-        # Step 2: Temporarily simulate the move
-        idx = r * self.board_size + c
-        board[idx] = player
-        for (cr, cc) in capture_positions:
-            cap_idx = cr * self.board_size + cc
-            board[cap_idx] = 0
-
-        # Step 3: Evaluate the resulting position
-        score = self.heuristic.score_lines_at(r, c, board, player, opponent)
-
-        # Step 4: RESTORE board to original state
-        board[idx] = 0
-        for (cr, cc) in capture_positions:
-            cap_idx = cr * self.board_size + cc
-            board[cap_idx] = opponent
-
-        # Return score and number of capture pairs
-        num_pairs = len(capture_positions) // 2
-        return score, num_pairs
 
     def get_relevant_moves(self, board):
         """
