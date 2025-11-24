@@ -168,7 +168,43 @@ class GomokuAI:
         delta_my_lines = score_after_me - score_before_me
         delta_opp_lines = score_after_opp - score_before_opp
 
-        # Delta from captures
+        # Correction for captured stones:
+        # Removing opponent stones changes the score of lines passing through them.
+        # We need to subtract the old score of those lines (where opponent had a stone)
+        # and add the new score (where it's empty).
+        delta_captured_correction = 0
+
+        if captured_pieces:
+            # To acturally reconstruct the "Before" state properly for patterns like 5-in-a-row,
+            # we must restore ALL captured stones at once.
+            # If we only restore one, a 5-in-a-row might look like a broken 4, which has a totally different score.
+
+            # 1. Restore ALL captured stones
+            for (cr, cc) in captured_pieces:
+                cap_idx = cr * self.board_size + cc
+                board[cap_idx] = opponent
+
+            # 2. Calculate "Before" score for all captured stones
+            # We sum the score contributions. Note that this might double-count the shared axis line,
+            # but that's consistent with how we will calculate the "After" score below.
+            score_caps_before = 0
+            for (cr, cc) in captured_pieces:
+                score_caps_before += self.heuristic.score_lines_at(cr, cc, board, opponent, player, is_critical_opp)
+
+            # 3. Remove ALL captured stones (Re-empty)
+            for (cr, cc) in captured_pieces:
+                cap_idx = cr * self.board_size + cc
+                board[cap_idx] = 0
+
+            # 4. Calculate "After" score for all captured stones (now empty)
+            score_caps_after = 0
+            for (cr, cc) in captured_pieces:
+                score_caps_after += self.heuristic.score_lines_at(cr, cc, board, opponent, player, is_critical_opp)
+
+            # 5. Delta
+            delta_captured_correction = score_caps_after - score_caps_before
+
+        # Delta from captures count (Bonus)
         old_capture_count = captures[player]
         new_capture_count = old_capture_count + len(captured_pieces)
         delta_my_captures = (
@@ -177,7 +213,12 @@ class GomokuAI:
         )
 
         # Final delta: MyGains - OpponentGains (weighted)
-        delta = (delta_my_lines + delta_my_captures) - (delta_opp_lines * 1.1)
+        # delta_opp_lines tracks change in opponent score around my NEW stone.
+        # delta_captured_correction tracks change in opponent score around CAPTURED stones.
+
+        total_opp_delta = delta_opp_lines + delta_captured_correction
+
+        delta = (delta_my_lines + delta_my_captures) - (total_opp_delta * 1.1)
 
         return delta, captured_pieces, old_capture_count, new_hash
 
@@ -514,13 +555,15 @@ class GomokuAI:
                         # Check 3x3 around it
                         for dr in range(-1, 2):
                             for dc in range(-1, 2):
-                                if dr==0 and dc==0: continue
-                                nr, nc = r+dr, c+dc
+                                if dr == 0 and dc == 0:
+                                    continue
+                                nr, nc = r + dr, c + dc
                                 if 0<=nr<self.board_size and 0<=nc<self.board_size:
-                                    if board[nr*self.board_size + nc] != 0:
+                                    if board[nr * self.board_size + nc] != 0:
                                         has_neighbor = True
                                         break
-                            if has_neighbor: break
+                            if has_neighbor:
+                                break
 
                         if has_neighbor:
                             relevant_moves.add((r, c))
