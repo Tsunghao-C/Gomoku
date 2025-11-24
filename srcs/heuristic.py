@@ -20,6 +20,7 @@ class HeuristicEvaluator:
         # Load all heuristic scores from config
         self.WIN_SCORE = scores["win_score"]
         self.PENDING_WIN_SCORE = scores["pending_win_score"]
+        self.OPEN_FOUR_SCORE = scores["open_four"]
         self.BROKEN_FOUR = scores["broken_four"]
         self.CLOSED_FOUR = scores["closed_four"]
         self.OPEN_THREE = scores["open_three"]
@@ -118,7 +119,7 @@ class HeuristicEvaluator:
             self.PATS_CLOSED_TWO.append(make_pattern(blocker, P, P, E))
             self.PATS_CLOSED_TWO.append(make_pattern(E, P, P, blocker))
 
-    def score_line_numeric(self, line, is_critical=False):
+    def score_line_numeric(self, line, current_captures=0, is_critical=False):
         """
         Scores a line (list of integers) based on pattern recognition.
         Uses sliding window or fast sequential checks.
@@ -143,11 +144,11 @@ class HeuristicEvaluator:
 
         # --- Win ---
         if has_pattern(self.PAT_WIN):
-            return self.PENDING_WIN_SCORE
+            return self.WIN_SCORE
 
         # --- Open Four ---
         if has_pattern(self.PAT_OPEN_FOUR):
-            score += self.PENDING_WIN_SCORE  # Unstoppable (Open 4)
+            score += self.OPEN_FOUR_SCORE  # Unstoppable (Open 4)
 
         # --- Broken Fours ---
         for pat in self.PATS_BROKEN_FOUR:
@@ -162,8 +163,25 @@ class HeuristicEvaluator:
         # --- Capture Threats ---
         for pat in self.PATS_CAPTURE_THREAT:
             if has_pattern(pat):
-                # If we are in a critical state (e.g. 8 captures), a threat is a pending win
-                score += self.PENDING_WIN_SCORE if is_critical else self.CAPTURE_THREAT_OPEN
+                if is_critical:
+                     score += self.PENDING_WIN_SCORE
+                else:
+                    # Scale capture threat based on current captures
+                    # Logic: As we get closer to losing by captures, threats become exponentially more dangerous.
+                    # 0 pairs: Base (15k)
+                    # 1 pair:  Base * 2 (30k)
+                    # 2 pairs: Base * 4 (60k)
+                    # 3 pairs: Base * 8 + Boost (Huge warning before critical)
+
+                    pairs = current_captures // 2
+
+                    # Special check for "Pre-Critical" state (e.g. 3 pairs out of 5 needed)
+                    # We want to start panicking BEFORE we hit 4 pairs (which is the critical threshold)
+                    if pairs >= 3:
+                        score += 2000000  # 2M - prioritize defending this over almost anything except Win/Open4
+                    else:
+                        multiplier = 1 + pairs
+                        score += self.CAPTURE_THREAT_OPEN * multiplier * 1.5
 
         # --- Open Threes ---
         for pat in self.PATS_OPEN_THREE:
@@ -192,7 +210,7 @@ class HeuristicEvaluator:
 
         return score
 
-    def score_lines_at(self, r, c, board, player, opponent, is_critical=False):
+    def score_lines_at(self, r, c, board, player, opponent, is_critical=False, current_captures=0):
         """
         Scores the 4 lines (H, V, D1, D2) passing through (r,c).
         Uses numeric evaluation.
@@ -202,7 +220,7 @@ class HeuristicEvaluator:
         score = 0
         for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
             line_vals = get_line_values(r, c, dr, dc, board, player, opponent, self.board_size)
-            score += self.score_line_numeric(line_vals, is_critical)
+            score += self.score_line_numeric(line_vals, current_captures, is_critical)
         return score
 
     def calculate_player_score(self, board, captures, player, win_by_captures):
@@ -214,13 +232,38 @@ class HeuristicEvaluator:
         score = 0
         opponent = 2 if player == 1 else 1
 
-        if captures[player] >= (win_by_captures * 2):
+        my_captures = captures[player]
+
+        if my_captures >= (win_by_captures * 2):
             return self.WIN_SCORE
 
-        score += (captures[player] // 2) * self.CAPTURE_SCORE
+        # Non-linear capture scoring
+        # Make early captures valuable, but later captures increasingly so.
+        # We use an exponential scale to discourage "trading" captures for position too easily.
+
+        pairs = my_captures // 2
+
+        # Exponential curve: 1, 3, 9, 27...
+        # 1 pair:  20k * 1.5 = 30k
+        # 2 pairs: 20k * 4.0 = 80k
+        # 3 pairs: 20k * 10.0 = 200k
+        # 4 pairs: 20k * 50.0 = 1M (Almost critical)
+
+        if pairs == 0:
+             multiplier = 0 # No score
+        elif pairs == 1:
+             multiplier = 1.5
+        elif pairs == 2:
+             multiplier = 4.0
+        elif pairs == 3:
+             multiplier = 10.0
+        else:
+             multiplier = 50.0
+
+        score += (pairs * self.CAPTURE_SCORE) * multiplier
 
         # Critical capture check: if we are 1 pair away from winning, threats are deadly
-        is_critical = captures[player] >= (win_by_captures * 2 - 2)
+        is_critical = my_captures >= (win_by_captures * 2 - 2)
 
         lines_seen = set()
         for r in range(self.board_size):
@@ -234,7 +277,7 @@ class HeuristicEvaluator:
                         if line_key not in lines_seen:
                             lines_seen.add(line_key)
                             line_vals = get_line_values(r, c, dr, dc, board, player, opponent, self.board_size)
-                            score += self.score_line_numeric(line_vals, is_critical)
+                            score += self.score_line_numeric(line_vals, my_captures, is_critical)
 
         return score
 

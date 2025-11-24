@@ -41,6 +41,7 @@
     "scores": {
       "win_score": 1000000000,
       "pending_win_score": 50000000,
+      "open_four": 30000000,
       "broken_four": 400000,
       "closed_four": 50000,
       "open_three": 10000,
