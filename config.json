@@ -4,8 +4,7 @@
     "win_by_captures": 5,
     "empty": 0,
     "black_player": 1,
-    "white_player": 2,
-    "default_game_mode": "P_VS_AI"
+    "white_player": 2
   },
   
   "player_settings": {

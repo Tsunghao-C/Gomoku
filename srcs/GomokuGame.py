@@ -80,9 +80,7 @@ class GomokuGame:
         self.small_menu_font = pygame.font.SysFont(ui_cfg["fonts"]["main_font"], 32)
 
         # Game mode
-        self.game_mode = game_cfg["default_game_mode"]
-
-        # Game state
+        self.game_mode = None  # Set by menu
         self.app_state = "MENU"  # Start in menu
         self.menu_buttons = []   # Initialized in draw_menu or init
 
@@ -253,7 +251,7 @@ class GomokuGame:
         self.ai.ai_is_thinking = False
         self.ai.algorithm.clear_transposition_table()
 
-        self.current_player = self.HUMAN_PLAYER
+        self.current_player = self.BLACK_PLAYER  # Always start with Black
 
         # Restore game mode (unless it was explicitly changed before reset)
         # Note: In handle_menu_click, we set self.game_mode BEFORE calling reset_game,
@@ -379,6 +377,15 @@ class GomokuGame:
 
     def run_ai_move(self):
         """Runs the AI to get the best move."""
+        # Hardcoded first move rule: if AI is Black and it's the first move, play center.
+        if self.move_count == 0 and self.AI_PLAYER == self.BLACK_PLAYER:
+            center = self.BOARD_SIZE // 2
+            print(f"AI (Black) starts game at center ({center}, {center})")
+            self.handle_move(center, center, self.AI_PLAYER)
+            self.ai.ai_is_thinking = False
+            self.last_move_time = 0
+            return
+
         best_move, time_taken = self.ai.get_best_move(
             self.board, self.captures, self.current_hash, self.AI_PLAYER,
             self.WIN_BY_CAPTURES, self.logic, self.move_count
@@ -599,7 +606,8 @@ class GomokuGame:
 
         self.menu_buttons = []
         options = [
-            ("Player vs AI", "P_VS_AI"),
+            ("PvE: Play as Black", "P_VS_AI_BLACK"),
+            ("PvE: Play as White", "P_VS_AI_WHITE"),
             ("Player vs Player", "P_VS_P"),
             ("PvP (Suggested)", "P_VS_P_SUGGESTED"),
             ("Quit", "QUIT")
@@ -638,6 +646,19 @@ class GomokuGame:
                 if mode == "QUIT":
                     self.quit_game()
                 else:
-                    self.game_mode = mode
+                    if mode == "P_VS_AI_BLACK":
+                        self.game_mode = "P_VS_AI"
+                        self.HUMAN_PLAYER = self.BLACK_PLAYER
+                        self.AI_PLAYER = self.WHITE_PLAYER
+                    elif mode == "P_VS_AI_WHITE":
+                        self.game_mode = "P_VS_AI"
+                        self.HUMAN_PLAYER = self.WHITE_PLAYER
+                        self.AI_PLAYER = self.BLACK_PLAYER
+                    else:
+                        self.game_mode = mode
+                        # Default for PvP modes
+                        self.HUMAN_PLAYER = self.BLACK_PLAYER # Meaningless in PvP but keeps consistency
+                        self.AI_PLAYER = self.WHITE_PLAYER
+
                     self.app_state = "PLAYING"
                     self.reset_game()  # Reset with new mode

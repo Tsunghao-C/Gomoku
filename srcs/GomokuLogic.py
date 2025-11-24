@@ -307,10 +307,20 @@ class GomokuLogic:
         # Check 5-in-a-row
         win_result = self.check_win(r, c, player_who_just_moved, board)
         if win_result is not None:
+            # IMPORTANT: In our rules, 5-in-a-row is NOT an immediate win if it can be broken.
+            # The game engine handles the "breaking" logic in the next turn.
+            # Minimax needs to verify if the opponent can break it.
+            # Therefore, we DO NOT treat this as a terminal state immediately.
+            # We let the search continue one more ply (opponent's turn).
+            # If opponent captures and breaks the line, the game continues.
+            # If opponent cannot break it, they have no moves that save them,
+            # and the evaluation function will naturally return a win score for us.
+
             if self.debug_terminal_states:
-                print(f"    DEBUG check_terminal_state: Player {player_who_just_moved} wins by 5-in-a-row!")
-                print(f"      At position ({r}, {c})")
-                print(f"      Win line: {win_result}")
-            return True
+                print(f"    DEBUG check_terminal_state: Player {player_who_just_moved} has 5-in-a-row.")
+                print(f"      Position: ({r}, {c})")
+                print("      NOT treating as terminal immediately to allow capture check.")
+
+            return False # Let the search continue to verify if it holds
 
         return False

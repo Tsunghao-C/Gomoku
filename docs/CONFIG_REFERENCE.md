@@ -13,7 +13,6 @@ Controls the core rules and initial state of the game.
 | `empty` | int | 0 | Value representing an empty cell. | Internal logic constant. Do not change. |
 | `black_player` | int | 1 | Value representing the Black player. | Internal logic constant. Do not change. |
 | `white_player` | int | 2 | Value representing the White player. | Internal logic constant. Do not change. |
-| `default_game_mode` | string | "P_VS_AI" | The mode selected by default on launch. | Options: `"P_VS_AI"`, `"P_VS_P"`, `"P_VS_P_SUGGESTED"`. |
 
 ## 2. Player Settings (`player_settings`)
 
