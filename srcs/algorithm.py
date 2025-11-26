@@ -128,35 +128,41 @@ class MinimaxAlgorithm:
         for depth in range(start_depth, self.max_depth + 1):
             self.current_depth = depth
 
-            # Use aspiration windows for depths after the first
-            if depth > start_depth and best_score_so_far != -math.inf:
-                # Narrow window around previous score
-                window = self.aspiration_delta
-                alpha = best_score_so_far - window
-                beta = best_score_so_far + window
+            # # Use aspiration windows for depths after the first
+            # if depth > start_depth and best_score_so_far != -math.inf:
+            #     # Narrow window around previous score
+            #     window = self.aspiration_delta
+            #     alpha = best_score_so_far - window
+            #     beta = best_score_so_far + window
 
-                best_move_this_depth, best_score_this_depth = self.minimax_root(
-                    game_state, ai_player, initial_board_score, depth,
-                    ordered_moves_func, make_move_func, undo_move_func,
-                    is_legal_func, check_terminal_func, alpha, beta
-                )
+            #     best_move_this_depth, best_score_this_depth = self.minimax_root(
+            #         game_state, ai_player, initial_board_score, depth,
+            #         ordered_moves_func, make_move_func, undo_move_func,
+            #         is_legal_func, check_terminal_func, alpha, beta
+            #     )
 
-                # If we failed outside the window, re-search with full window
-                if (not self.time_limit_reached and
-                    (best_score_this_depth <= alpha or best_score_this_depth >= beta)):
-                    print(f"Aspiration window failed, re-searching depth {depth}")
-                    best_move_this_depth, best_score_this_depth = self.minimax_root(
-                        game_state, ai_player, initial_board_score, depth,
-                        ordered_moves_func, make_move_func, undo_move_func,
-                        is_legal_func, check_terminal_func, -math.inf, math.inf
-                    )
-            else:
-                # First iteration or no previous score: use full window
-                best_move_this_depth, best_score_this_depth = self.minimax_root(
-                    game_state, ai_player, initial_board_score, depth,
-                    ordered_moves_func, make_move_func, undo_move_func,
-                    is_legal_func, check_terminal_func, -math.inf, math.inf
-                )
+            #     # If we failed outside the window, re-search with full window
+            #     if (not self.time_limit_reached and
+            #         (best_score_this_depth <= alpha or best_score_this_depth >= beta)):
+            #         print(f"Aspiration window failed, re-searching depth {depth}")
+            #         best_move_this_depth, best_score_this_depth = self.minimax_root(
+            #             game_state, ai_player, initial_board_score, depth,
+            #             ordered_moves_func, make_move_func, undo_move_func,
+            #             is_legal_func, check_terminal_func, -math.inf, math.inf
+            #         )
+            # else:
+            #     # First iteration or no previous score: use full window
+            #     best_move_this_depth, best_score_this_depth = self.minimax_root(
+            #         game_state, ai_player, initial_board_score, depth,
+            #         ordered_moves_func, make_move_func, undo_move_func,
+            #         is_legal_func, check_terminal_func, -math.inf, math.inf
+            #     )
+
+            # Disabled aspiration windows for simplicity
+            best_move_this_depth, best_score_this_depth = self.minimax_root(
+                game_state, ai_player, initial_board_score, depth,
+                ordered_moves_func, make_move_func, undo_move_func,
+                is_legal_func, check_terminal_func, -math.inf, math.inf)
 
             if self.time_limit_reached:
                 print(f"Search at depth {depth} timed out. Using result from depth {depth_reached}.")
@@ -291,7 +297,9 @@ class MinimaxAlgorithm:
             return current_score
 
         # Check transposition table
-        full_hash = hash((zobrist_hash, tuple(captures.items())))
+        captures_tuple = tuple(sorted(captures.items()))  # Sort once for consistency
+        full_hash = zobrist_hash ^ hash(captures_tuple) # XOR combine
+        # full_hash = hash((zobrist_hash, tuple(captures.items())))
         if full_hash in self.transposition_table:
             tt_score, tt_depth, tt_flag = self.transposition_table[full_hash]
             if tt_depth >= depth:
