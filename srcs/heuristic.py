@@ -34,6 +34,9 @@ class HeuristicEvaluator:
         # Store capture defense config for position evaluation
         self.capture_defense_cfg = heuristic_cfg.get("capture_defense", {})
 
+        # Pre-allocated buffer for line values (avoid repeated allocations)
+        self._line_buffer = [0] * 13
+
         # Numeric Pattern Constants
         # 0=Empty, 1=Player, 2=Opponent, 3=Boundary
         # We pre-compile these as tuples for fast matching
@@ -41,10 +44,10 @@ class HeuristicEvaluator:
 
     def _init_patterns(self):
         """Initialize numeric patterns for scoring."""
-        P = 1
-        O = 2
-        E = 0
-        X = 3
+        P = 1  # Player
+        OPP = 2  # Opponent
+        E = 0  # Empty
+        X = 3  # Boundary
 
         # Helper to create pattern variants
         def make_pattern(*args):
@@ -64,16 +67,16 @@ class HeuristicEvaluator:
         ]
 
         # --- Closed Fours ---
-        # Ends with X or O
+        # Ends with X or OPP
         self.PATS_CLOSED_FOUR = []
-        for blocker in [X, O]:
+        for blocker in [X, OPP]:
             self.PATS_CLOSED_FOUR.append(make_pattern(blocker, P, P, P, P, E))
             self.PATS_CLOSED_FOUR.append(make_pattern(E, P, P, P, P, blocker))
 
         # --- Capture Threats ---
         self.PATS_CAPTURE_THREAT = [
-            make_pattern(P, O, O, E),
-            make_pattern(E, O, O, P)
+            make_pattern(P, OPP, OPP, E),
+            make_pattern(E, OPP, OPP, P)
         ]
 
         # --- Open Threes ---
@@ -87,7 +90,7 @@ class HeuristicEvaluator:
 
         # --- Closed Threes ---
         self.PATS_CLOSED_THREE = []
-        for blocker in [X, O]:
+        for blocker in [X, OPP]:
             # Consecutive
             self.PATS_CLOSED_THREE.append(make_pattern(blocker, P, P, P, E))
             self.PATS_CLOSED_THREE.append(make_pattern(E, P, P, P, blocker))
@@ -115,112 +118,176 @@ class HeuristicEvaluator:
 
         # --- Closed Twos ---
         self.PATS_CLOSED_TWO = []
-        for blocker in [X, O]:
+        for blocker in [X, OPP]:
             self.PATS_CLOSED_TWO.append(make_pattern(blocker, P, P, E))
             self.PATS_CLOSED_TWO.append(make_pattern(E, P, P, blocker))
 
     def score_line_numeric(self, line, current_captures=0, is_critical=False):
         """
-        Scores a line (list of integers) based on pattern recognition.
-        Uses sliding window or fast sequential checks.
+        Scores a line using optimized single-pass pattern matching.
+        Scans the line once and checks all relevant patterns at each position.
         """
-        # Convert to tuple for faster matching if needed, or just iterate
-        # Since we are searching for sub-sequences, we can convert to string of bytes/chars?
-        # Or just iterate. Iterating a list of 13 items is fast.
-
         score = 0
         length = len(line)
 
-        # Optimization: Convert line to a tuple once
-        line_tuple = tuple(line)
+        # Track what we've found to avoid duplicate counting
+        found_win = False
+        found_open_four = False
+        found_broken_four = False
+        found_closed_four = False
+        found_capture_threat = False
+        found_open_three = False
+        found_closed_three = False
+        found_broken_three = False
+        found_open_two = False
+        found_closed_two = False
 
-        # Helper to search sub-tuple
-        def has_pattern(pattern):
-            pat_len = len(pattern)
-            for i in range(length - pat_len + 1):
-                if line_tuple[i:i+pat_len] == pattern:
-                    return True
-            return False
+        # Single pass through the line - check patterns at each position
+        for i in range(length):
+            # Quick win check (highest priority, early return)
+            if not found_win and i <= length - 5:
+                if (line[i] == 1 and line[i+1] == 1 and line[i+2] == 1 and
+                    line[i+3] == 1 and line[i+4] == 1):
+                    return self.WIN_SCORE
 
-        # --- Win ---
-        if has_pattern(self.PAT_WIN):
-            return self.WIN_SCORE
+            # Open Four: _OOOO_ (pattern length 6)
+            if not found_open_four and i <= length - 6:
+                if (line[i] == 0 and line[i+1] == 1 and line[i+2] == 1 and
+                    line[i+3] == 1 and line[i+4] == 1 and line[i+5] == 0):
+                    score += self.OPEN_FOUR_SCORE
+                    found_open_four = True
 
-        # --- Open Four ---
-        if has_pattern(self.PAT_OPEN_FOUR):
-            score += self.OPEN_FOUR_SCORE  # Unstoppable (Open 4)
+            # Broken Fours (pattern length 7)
+            if not found_broken_four and i <= length - 7:
+                if ((line[i] == 0 and line[i+1] == 1 and line[i+2] == 0 and
+                     line[i+3] == 1 and line[i+4] == 1 and line[i+5] == 1 and line[i+6] == 0) or
+                    (line[i] == 0 and line[i+1] == 1 and line[i+2] == 1 and
+                     line[i+3] == 1 and line[i+4] == 0 and line[i+5] == 1 and line[i+6] == 0) or
+                    (line[i] == 0 and line[i+1] == 1 and line[i+2] == 1 and
+                     line[i+3] == 0 and line[i+4] == 1 and line[i+5] == 1 and line[i+6] == 0)):
+                    score += self.BROKEN_FOUR
+                    found_broken_four = True
 
-        # --- Broken Fours ---
-        for pat in self.PATS_BROKEN_FOUR:
-            if has_pattern(pat):
-                score += self.BROKEN_FOUR
+            # Closed Fours (pattern length 6)
+            if not found_closed_four and i <= length - 6:
+                blocker = line[i]
+                if blocker in (2, 3):  # Opponent or boundary
+                    if (line[i+1] == 1 and line[i+2] == 1 and
+                        line[i+3] == 1 and line[i+4] == 1 and line[i+5] == 0):
+                        score += self.CLOSED_FOUR
+                        found_closed_four = True
+                if line[i] == 0:
+                    blocker_end = line[i+5]
+                    if blocker_end in (2, 3):
+                        if (line[i+1] == 1 and line[i+2] == 1 and
+                            line[i+3] == 1 and line[i+4] == 1):
+                            score += self.CLOSED_FOUR
+                            found_closed_four = True
 
-        # --- Closed Fours ---
-        for pat in self.PATS_CLOSED_FOUR:
-            if has_pattern(pat):
-                score += self.CLOSED_FOUR
-
-        # --- Capture Threats ---
-        for pat in self.PATS_CAPTURE_THREAT:
-            if has_pattern(pat):
-                if is_critical:
-                     score += self.PENDING_WIN_SCORE
-                else:
-                    # Scale capture threat based on current captures
-                    # Logic: As we get closer to losing by captures, threats become exponentially more dangerous.
-                    # 0 pairs: Base (15k)
-                    # 1 pair:  Base * 2 (30k)
-                    # 2 pairs: Base * 4 (60k)
-                    # 3 pairs: Base * 8 + Boost (Huge warning before critical)
-
-                    pairs = current_captures // 2
-
-                    # Special check for "Pre-Critical" state (e.g. 3 pairs out of 5 needed)
-                    # We want to start panicking BEFORE we hit 4 pairs (which is the critical threshold)
-                    if pairs >= 3:
-                        score += 2000000  # 2M - prioritize defending this over almost anything except Win/Open4
+            # Capture Threats: POOE or EOOP (pattern length 4)
+            if not found_capture_threat and i <= length - 4:
+                if ((line[i] == 1 and line[i+1] == 2 and line[i+2] == 2 and line[i+3] == 0) or
+                    (line[i] == 0 and line[i+1] == 2 and line[i+2] == 2 and line[i+3] == 1)):
+                    if is_critical:
+                        score += self.PENDING_WIN_SCORE
                     else:
-                        multiplier = 1 + pairs
-                        score += self.CAPTURE_THREAT_OPEN * multiplier * 1.5
+                        pairs = current_captures // 2
+                        if pairs >= 3:
+                            score += 2000000
+                        else:
+                            multiplier = 1 + pairs
+                            score += self.CAPTURE_THREAT_OPEN * multiplier * 1.5
+                    found_capture_threat = True
 
-        # --- Open Threes ---
-        for pat in self.PATS_OPEN_THREE:
-            if has_pattern(pat):
-                score += self.OPEN_THREE
+            # Open Threes (pattern length 5)
+            if not found_open_three and i <= length - 5:
+                if ((line[i] == 0 and line[i+1] == 1 and line[i+2] == 1 and
+                     line[i+3] == 1 and line[i+4] == 0) or
+                    (line[i] == 0 and line[i+1] == 1 and line[i+2] == 1 and
+                     line[i+3] == 0 and line[i+4] == 1) or
+                    (line[i] == 0 and line[i+1] == 1 and line[i+2] == 0 and
+                     line[i+3] == 1 and line[i+4] == 1)):
+                    score += self.OPEN_THREE
+                    found_open_three = True
 
-        # --- Closed Threes ---
-        for pat in self.PATS_CLOSED_THREE:
-            if has_pattern(pat):
-                score += self.CLOSED_THREE
+            # Closed Threes (pattern length 5)
+            if not found_closed_three and i <= length - 5:
+                blocker = line[i]
+                if blocker in (2, 3):
+                    if ((line[i+1] == 1 and line[i+2] == 1 and line[i+3] == 1 and line[i+4] == 0) or
+                        (line[i+1] == 1 and line[i+2] == 1 and line[i+3] == 0 and line[i+4] == 1) or
+                        (line[i+1] == 1 and line[i+2] == 0 and line[i+3] == 1 and line[i+4] == 1)):
+                        score += self.CLOSED_THREE
+                        found_closed_three = True
+                if line[i] == 0:
+                    blocker_end = line[i+4]
+                    if blocker_end in (2, 3):
+                        if ((line[i+1] == 1 and line[i+2] == 1 and line[i+3] == 1) or
+                            (line[i+1] == 1 and line[i+2] == 0 and line[i+3] == 1) or
+                            (line[i+1] == 1 and line[i+2] == 1 and line[i+3] == 0)):
+                            score += self.CLOSED_THREE
+                            found_closed_three = True
 
-        # --- Broken Threes ---
-        for pat in self.PATS_BROKEN_THREE:
-            if has_pattern(pat):
-                score += self.BROKEN_THREE
+            # Broken Threes (pattern length 7)
+            if not found_broken_three and i <= length - 7:
+                if ((line[i] == 0 and line[i+1] == 1 and line[i+2] == 0 and
+                     line[i+3] == 1 and line[i+4] == 0 and line[i+5] == 1 and line[i+6] == 0) or
+                    (line[i] == 0 and line[i+1] == 1 and line[i+2] == 0 and
+                     line[i+3] == 0 and line[i+4] == 1 and line[i+5] == 1 and line[i+6] == 0) or
+                    (line[i] == 0 and line[i+1] == 1 and line[i+2] == 1 and
+                     line[i+3] == 0 and line[i+4] == 0 and line[i+5] == 1 and line[i+6] == 0)):
+                    score += self.BROKEN_THREE
+                    found_broken_three = True
 
-        # --- Open Twos ---
-        for pat in self.PATS_OPEN_TWO:
-            if has_pattern(pat):
-                score += self.OPEN_TWO
+            # Open Twos (pattern length 4)
+            if not found_open_two and i <= length - 4:
+                if ((line[i] == 0 and line[i+1] == 1 and line[i+2] == 1 and line[i+3] == 0) or
+                    (line[i] == 0 and line[i+1] == 1 and line[i+2] == 0 and line[i+3] == 1)):
+                    score += self.OPEN_TWO
+                    found_open_two = True
 
-        # --- Closed Twos ---
-        for pat in self.PATS_CLOSED_TWO:
-            if has_pattern(pat):
-                score += self.CLOSED_TWO
+            # Closed Twos (pattern length 4)
+            if not found_closed_two and i <= length - 4:
+                blocker = line[i]
+                if blocker in (2, 3):
+                    if line[i+1] == 1 and line[i+2] == 1 and line[i+3] == 0:
+                        score += self.CLOSED_TWO
+                        found_closed_two = True
+                if line[i] == 0:
+                    blocker_end = line[i+3]
+                    if blocker_end in (2, 3) and line[i+1] == 1 and line[i+2] == 1:
+                        score += self.CLOSED_TWO
+                        found_closed_two = True
 
         return score
 
     def score_lines_at(self, r, c, board, player, opponent, is_critical=False, current_captures=0):
         """
         Scores the 4 lines (H, V, D1, D2) passing through (r,c).
-        Uses numeric evaluation.
+        Uses numeric evaluation with optimized inline line extraction.
         """
-        from srcs.utils import get_line_values
-
         score = 0
+
+        # Evaluate 4 directions with inline line extraction (avoids function calls)
         for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
-            line_vals = get_line_values(r, c, dr, dc, board, player, opponent, self.board_size)
-            score += self.score_line_numeric(line_vals, current_captures, is_critical)
+            # Fill the reusable line buffer
+            for i in range(-6, 7):
+                cr, cc = r + dr * i, c + dc * i
+                idx = i + 6
+                if not (0 <= cr < self.board_size and 0 <= cc < self.board_size):
+                    self._line_buffer[idx] = 3  # Out of bounds
+                else:
+                    piece = board[cr * self.board_size + cc]
+                    if piece == 0:
+                        self._line_buffer[idx] = 0  # Empty
+                    elif piece == player:
+                        self._line_buffer[idx] = 1  # Player
+                    else:  # piece == opponent
+                        self._line_buffer[idx] = 2  # Opponent
+
+            # Score the line (reads from self._line_buffer)
+            score += self.score_line_numeric(self._line_buffer, current_captures, is_critical)
+
         return score
 
     def calculate_player_score(self, board, captures, player, win_by_captures):

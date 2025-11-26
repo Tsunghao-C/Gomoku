@@ -264,9 +264,9 @@ class MinimaxAlgorithm:
             return current_score
 
         # Check transposition table
-        captures_tuple = tuple(sorted(captures.items()))  # Sort once for consistency
-        full_hash = zobrist_hash ^ hash(captures_tuple) # XOR combine
-        # full_hash = hash((zobrist_hash, tuple(captures.items())))
+        # Combine zobrist hash with capture counts using simple arithmetic
+        # This avoids creating temporary objects (tuple, list) on every node
+        full_hash = zobrist_hash ^ (captures[1] * 7919) ^ (captures[2] * 7927)
         if full_hash in self.transposition_table:
             tt_score, tt_depth, tt_flag = self.transposition_table[full_hash]
             if tt_depth >= depth:

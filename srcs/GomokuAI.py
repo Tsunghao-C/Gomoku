@@ -286,11 +286,22 @@ class GomokuAI:
                         nr -= dr
                         nc -= dc
 
-                    # If 4 in a row with at least 1 empty spot, ALL empties are critical
-                    # This handles:
+                    # Critical moves: 4-in-a-row (immediate) or 3-in-a-row with 2 open ends (dangerous)
+                    #
+                    # 4-in-a-row cases:
                     # - O-X-X-X-X-E (1 empty, blocked on one side)
                     # - E-X-X-X-X-E (2 empties, open on both sides - BOTH are critical!)
+                    #
+                    # 3-in-a-row cases (only if open on both ends):
+                    # - E-X-X-X-E (2 empties, open three - very dangerous!)
                     if count == 4 and len(empty_positions) >= 1:
+                        for critical_pos in empty_positions:
+                            if current_player == player:
+                                winning_positions.add(critical_pos)
+                            else:
+                                blocking_positions.add(critical_pos)
+                    elif count == 3 and len(empty_positions) == 2:
+                        # Open three: both ends are empty, very dangerous!
                         for critical_pos in empty_positions:
                             if current_player == player:
                                 winning_positions.add(critical_pos)
@@ -450,25 +461,44 @@ class GomokuAI:
     def _select_final_moves(self, tiers, num_moves):
         """
         Select final moves based on game phase and config limits.
-        Prioritizes winning/blocking moves, then fills with other moves.
+        Priority order:
+        1. Our immediate wins (5-in-a-row) - ABSOLUTE
+        2. Block opponent's immediate wins
+        3. Our threats (4-in-a-row)
+        4. Block opponent's threats
+        5. Other moves
         """
         move_ordering_cfg = self.config["ai_settings"]["move_ordering"]
         adaptive_cfg = move_ordering_cfg["adaptive_move_limits"]
         priority_cfg = move_ordering_cfg["priority_move_limits"]
 
-        # Immediate wins take absolute priority
+        # Check if any winning moves are TRUE wins (5-in-a-row)
+        # vs just strong moves (completing 4-in-a-row)
+        # For simplicity: winning moves from _find_critical_moves are always high priority
+        # The minimax search will correctly evaluate which ones are instant wins
+
+        # Strategy: Return BOTH winning and blocking moves, but winning first
+        # Minimax will choose the best one based on evaluation
+        if tiers['winning'] or tiers['blocking']:
+            result = []
+            win_limit = priority_cfg.get("winning_moves", 5)
+            block_limit = priority_cfg.get("blocking_moves", 6)
+
+            # Add winning moves first
+            if tiers['winning']:
+                result.extend([move for score, move in tiers['winning'][:win_limit]])
+
+            # Add blocking moves
+            if tiers['blocking']:
+                result.extend([move for score, move in tiers['blocking'][:block_limit]])
+
+            # Limit total to avoid explosion
+            return result[:max(win_limit, block_limit)]
+
+        # If only winning moves (no immediate threats to block)
         if tiers['winning']:
             limit = priority_cfg.get("winning_moves", 5)
             return [move for score, move in tiers['winning'][:limit]]
-
-        # Critical blocking with some offensive moves
-        if tiers['blocking']:
-            block_limit = priority_cfg.get("blocking_moves", 6)
-            attack_limit = priority_cfg.get("high_priority_early", 6)
-
-            result = [move for score, move in tiers['blocking'][:block_limit]]
-            result.extend([move for score, move in tiers['high_priority'][:attack_limit]])
-            return result[:adaptive_cfg.get("early_game_limit", 18)]
 
         # Normal game: combine tiers based on game phase
         max_moves = self._get_move_limit_for_phase(num_moves, adaptive_cfg)
