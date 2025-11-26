@@ -17,8 +17,6 @@
     "max_depth": 12,
     "time_limit": 1.5,
     "enable_iterative_deepening": true,
-    "enable_aspiration_windows": true,
-    "aspiration_window_delta": 500000,
     "enable_null_move_pruning": true,
     "null_move_reduction": 2,
     "enable_late_move_reductions": true,
@@ -26,7 +24,6 @@
     "lmr_reduction": 2,
     "adaptive_starting_depth": {
       "enable": true,
-      "note": "Currently disabled - always starts from depth 1 for consistency and better minimax behavior",
       "early_game_moves": 8,
       "early_game_depth": 1,
       "mid_early_moves": 15,

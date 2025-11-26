@@ -22,9 +22,6 @@ class MinimaxAlgorithm:
         self.time_limit = algo_cfg["time_limit"]
         self.win_score = heuristic_cfg["scores"]["win_score"]
 
-        # Aspiration Window
-        self.aspiration_delta = algo_cfg.get("aspiration_window_delta", 50000)
-
         # Optimization flags
         self.enable_null_move_pruning = algo_cfg.get("enable_null_move_pruning", True)
         self.null_move_reduction = algo_cfg.get("null_move_reduction", 2)
@@ -128,37 +125,7 @@ class MinimaxAlgorithm:
         for depth in range(start_depth, self.max_depth + 1):
             self.current_depth = depth
 
-            # # Use aspiration windows for depths after the first
-            # if depth > start_depth and best_score_so_far != -math.inf:
-            #     # Narrow window around previous score
-            #     window = self.aspiration_delta
-            #     alpha = best_score_so_far - window
-            #     beta = best_score_so_far + window
-
-            #     best_move_this_depth, best_score_this_depth = self.minimax_root(
-            #         game_state, ai_player, initial_board_score, depth,
-            #         ordered_moves_func, make_move_func, undo_move_func,
-            #         is_legal_func, check_terminal_func, alpha, beta
-            #     )
-
-            #     # If we failed outside the window, re-search with full window
-            #     if (not self.time_limit_reached and
-            #         (best_score_this_depth <= alpha or best_score_this_depth >= beta)):
-            #         print(f"Aspiration window failed, re-searching depth {depth}")
-            #         best_move_this_depth, best_score_this_depth = self.minimax_root(
-            #             game_state, ai_player, initial_board_score, depth,
-            #             ordered_moves_func, make_move_func, undo_move_func,
-            #             is_legal_func, check_terminal_func, -math.inf, math.inf
-            #         )
-            # else:
-            #     # First iteration or no previous score: use full window
-            #     best_move_this_depth, best_score_this_depth = self.minimax_root(
-            #         game_state, ai_player, initial_board_score, depth,
-            #         ordered_moves_func, make_move_func, undo_move_func,
-            #         is_legal_func, check_terminal_func, -math.inf, math.inf
-            #     )
-
-            # Disabled aspiration windows for simplicity
+            # Standard minimax search with full alpha-beta window
             best_move_this_depth, best_score_this_depth = self.minimax_root(
                 game_state, ai_player, initial_board_score, depth,
                 ordered_moves_func, make_move_func, undo_move_func,
@@ -316,16 +283,13 @@ class MinimaxAlgorithm:
         if depth == 0:
             return current_score
 
-        # ENHANCED: Null Move Pruning (only for non-critical positions)
-        USE_NULL_MOVE = True
-        NULL_MOVE_REDUCTION = 2
-
-        if (USE_NULL_MOVE and depth >= 3 and not is_maximizing_player and
+        # Null Move Pruning (only for non-critical positions)
+        if (self.enable_null_move_pruning and depth >= 3 and not is_maximizing_player and
             abs(current_score) < self.win_score * 0.3):  # Not in critical position
 
             # Try a "null move" - opponent passes, we get to move again
             null_score = self.minimax(
-                game_state, depth - 1 - NULL_MOVE_REDUCTION,
+                game_state, depth - 1 - self.null_move_reduction,
                 alpha, beta, True,
                 current_score, ai_player,
                 ordered_moves_func, make_move_func, undo_move_func,
