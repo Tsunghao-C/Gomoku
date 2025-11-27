@@ -462,27 +462,32 @@ class GomokuAI:
         """
         Select final moves based on game phase and config limits.
         Priority order:
-        1. Our immediate wins (5-in-a-row) - ABSOLUTE
-        2. Block opponent's immediate wins
-        3. Our threats (4-in-a-row)
-        4. Block opponent's threats
+        1. Block opponent's OPEN threats (2+ blocking positions = open four)
+        2. Our immediate wins (5-in-a-row)
+        3. Block opponent's single threat
+        4. Our threats (4-in-a-row)
         5. Other moves
         """
         move_ordering_cfg = self.config["ai_settings"]["move_ordering"]
         adaptive_cfg = move_ordering_cfg["adaptive_move_limits"]
         priority_cfg = move_ordering_cfg["priority_move_limits"]
 
-        # Check if any winning moves are TRUE wins (5-in-a-row)
-        # vs just strong moves (completing 4-in-a-row)
-        # For simplicity: winning moves from _find_critical_moves are always high priority
-        # The minimax search will correctly evaluate which ones are instant wins
+        win_limit = priority_cfg.get("winning_moves", 5)
+        block_limit = priority_cfg.get("blocking_moves", 6)
 
-        # Strategy: Return BOTH winning and blocking moves, but winning first
-        # Minimax will choose the best one based on evaluation
+        # CRITICAL: If opponent has multiple blocking positions (open four),
+        # they can win on EITHER side next move - MUST block!
+        if tiers['blocking'] and len(tiers['blocking']) >= 2:
+            # Open four/threat - blocking takes ABSOLUTE priority
+            result = [move for score, move in tiers['blocking'][:block_limit]]
+            # Maybe add one winning move as backup
+            if tiers['winning']:
+                result.extend([move for score, move in tiers['winning'][:1]])
+            return result
+
+        # Normal case: both winning and blocking, but winning first
         if tiers['winning'] or tiers['blocking']:
             result = []
-            win_limit = priority_cfg.get("winning_moves", 5)
-            block_limit = priority_cfg.get("blocking_moves", 6)
 
             # Add winning moves first
             if tiers['winning']:

@@ -18,20 +18,7 @@
     "time_limit": 1.5,
     "enable_iterative_deepening": true,
     "enable_null_move_pruning": true,
-    "null_move_reduction": 2,
-    "enable_late_move_reductions": true,
-    "lmr_threshold": 3,
-    "lmr_reduction": 2,
-    "adaptive_starting_depth": {
-      "enable": true,
-      "early_game_moves": 8,
-      "early_game_depth": 1,
-      "mid_early_moves": 15,
-      "mid_early_depth": 3,
-      "mid_game_moves": 25,
-      "mid_game_depth": 4,
-      "late_game_depth": 5
-    }
+    "null_move_reduction": 2
   },
   
   "heuristic_settings": {

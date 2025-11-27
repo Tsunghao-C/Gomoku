@@ -25,12 +25,6 @@ class MinimaxAlgorithm:
         # Optimization flags
         self.enable_null_move_pruning = algo_cfg.get("enable_null_move_pruning", True)
         self.null_move_reduction = algo_cfg.get("null_move_reduction", 2)
-        self.enable_lmr = algo_cfg.get("enable_late_move_reductions", True)
-        self.lmr_threshold = algo_cfg.get("lmr_threshold", 4)
-        self.lmr_reduction = algo_cfg.get("lmr_reduction", 1)
-
-        # Adaptive starting depth settings
-        self.adaptive_cfg = algo_cfg.get("adaptive_starting_depth", {})
 
         # Debug settings
         ai_cfg = config.get("ai_settings", {})
@@ -98,27 +92,13 @@ class MinimaxAlgorithm:
         best_score_so_far = -math.inf
         depth_reached = 0
 
-        # Always start from depth 1 for consistency, unless adaptive is enabled
+        # Always start from depth 1 for consistency
         # This ensures:
         # 1. Transposition table is populated progressively
         # 2. Move ordering improves iteratively
         # 3. Minimax logic is consistent across all game phases
         # 4. Easier to debug and understand search behavior
         start_depth = 1
-
-        if self.adaptive_cfg.get("enable", False):
-            if num_moves < self.adaptive_cfg.get("early_game_moves", 8):
-                start_depth = self.adaptive_cfg.get("early_game_depth", 1)
-            elif num_moves < self.adaptive_cfg.get("mid_early_moves", 15):
-                start_depth = self.adaptive_cfg.get("mid_early_depth", 3)
-            elif num_moves < self.adaptive_cfg.get("mid_game_moves", 25):
-                start_depth = self.adaptive_cfg.get("mid_game_depth", 4)
-            else:
-                start_depth = self.adaptive_cfg.get("late_game_depth", 5)
-
-            # Ensure start_depth doesn't exceed max_depth
-            start_depth = min(start_depth, self.max_depth)
-            print(f"Adaptive starting depth enabled: starting at {start_depth}")
 
         print(f"Starting iterative deepening from depth {start_depth}")
 
@@ -331,31 +311,14 @@ class MinimaxAlgorithm:
                     # Terminal state detected - this position wins the game
                     score = self.win_score
                 else:
-                    # ENHANCED: Late Move Reduction
-                    reduction = 0
-                    if self.enable_lmr and depth >= 3 and move_number > self.lmr_threshold and best_score > -self.win_score * 0.5:
-                        reduction = self.lmr_reduction
-                        # Increase reduction for very late moves?
-                        if move_number > self.lmr_threshold * 2:
-                            reduction += 1
-
+                    # Standard recursive search
                     score = self.minimax(
-                        (board, captures, new_hash), depth - 1 - reduction,
+                        (board, captures, new_hash), depth - 1,
                         alpha, beta, False,
                         current_score + delta, ai_player,
                         ordered_moves_func, make_move_func, undo_move_func,
                         is_legal_func, check_terminal_func
                     )
-
-                    # Re-search if LMR found a good move
-                    if reduction > 0 and score > alpha:
-                        score = self.minimax(
-                            (board, captures, new_hash), depth - 1,
-                            alpha, beta, False,
-                            current_score + delta, ai_player,
-                            ordered_moves_func, make_move_func, undo_move_func,
-                            is_legal_func, check_terminal_func
-                        )
 
                 # Undo move
                 undo_move_func(r, c, player, board, captured_pieces, old_cap_count, captures, zobrist_hash)
@@ -402,30 +365,14 @@ class MinimaxAlgorithm:
                 if is_terminal:
                     score = -self.win_score
                 else:
-                    # ENHANCED: Late Move Reduction
-                    reduction = 0
-                    if self.enable_lmr and depth >= 3 and move_number > self.lmr_threshold and best_score < self.win_score * 0.5:
-                        reduction = self.lmr_reduction
-                        if move_number > self.lmr_threshold * 2:
-                            reduction += 1
-
+                    # Standard recursive search
                     score = self.minimax(
-                        (board, captures, new_hash), depth - 1 - reduction,
+                        (board, captures, new_hash), depth - 1,
                         alpha, beta, True,
                         current_score - delta, ai_player,
                         ordered_moves_func, make_move_func, undo_move_func,
                         is_legal_func, check_terminal_func
                     )
-
-                    # Re-search if LMR found a good move
-                    if reduction > 0 and score < beta:
-                        score = self.minimax(
-                            (board, captures, new_hash), depth - 1,
-                            alpha, beta, True,
-                            current_score - delta, ai_player,
-                            ordered_moves_func, make_move_func, undo_move_func,
-                            is_legal_func, check_terminal_func
-                        )
 
                 # Undo move
                 undo_move_func(r, c, player, board, captured_pieces, old_cap_count, captures, zobrist_hash)
