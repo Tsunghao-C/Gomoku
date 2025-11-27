@@ -222,9 +222,10 @@ class GomokuAI:
 
         return delta, captured_pieces, old_capture_count, new_hash
 
-    def _find_critical_moves(self, board, player):
+    def _find_critical_moves(self, board, player, captures=None, game_logic=None, win_by_captures=5):
         """
-        Find critical moves: positions that complete or block 4-in-a-row.
+        Find critical moves: positions that complete or block 4-in-a-row,
+        or capture to win.
         These moves MUST always be considered regardless of windowing.
 
         Returns:
@@ -232,6 +233,31 @@ class GomokuAI:
         """
         winning_positions = set()
         blocking_positions = set()
+        opponent = 2 if player == 1 else 1
+
+        # Check for capture-to-win opportunities if we have capture info
+        if captures is not None and game_logic is not None:
+            # Check if we can win by capture
+            if captures[player] >= (win_by_captures * 2 - 2):
+                # We need 1 more pair to win - check all empty positions for captures
+                for r in range(self.board_size):
+                    for c in range(self.board_size):
+                        idx = r * self.board_size + c
+                        if board[idx] == 0:
+                            capture_positions = self._get_capture_positions(r, c, player, board)
+                            if len(capture_positions) >= 2:  # At least 1 pair
+                                winning_positions.add((r, c))
+
+            # Check if opponent can win by capture
+            if captures[opponent] >= (win_by_captures * 2 - 2):
+                # Opponent needs 1 more pair to win - must block those captures
+                for r in range(self.board_size):
+                    for c in range(self.board_size):
+                        idx = r * self.board_size + c
+                        if board[idx] == 0:
+                            capture_positions = self._get_capture_positions(r, c, opponent, board)
+                            if len(capture_positions) >= 2:  # At least 1 pair
+                                blocking_positions.add((r, c))
 
         directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
 
@@ -319,8 +345,10 @@ class GomokuAI:
         is_critical_attack = captures[player] >= (win_by_captures * 2 - 2)
         is_critical_defend = captures[opponent] >= (win_by_captures * 2 - 2)
 
-        # Find critical moves (winning/blocking 4-in-a-row)
-        winning_positions, blocking_positions = self._find_critical_moves(board, player)
+        # Find critical moves (winning/blocking 4-in-a-row, capture-to-win)
+        winning_positions, blocking_positions = self._find_critical_moves(
+            board, player, captures, game_logic, win_by_captures
+        )
 
         # Get all candidate moves
         legal_moves = self._get_candidate_moves(board, num_moves, winning_positions, blocking_positions)
@@ -475,10 +503,24 @@ class GomokuAI:
         win_limit = priority_cfg.get("winning_moves", 5)
         block_limit = priority_cfg.get("blocking_moves", 6)
 
-        # CRITICAL: If opponent has multiple blocking positions (open four),
+        # CRITICAL: If opponent has URGENT multiple threats (open four: 4-in-a-row with 2 open ends),
         # they can win on EITHER side next move - MUST block!
+        # Only prioritize blocking if it's a TRUE open four (score >= 40M)
+        # Don't block when we have an immediate win available!
         if tiers['blocking'] and len(tiers['blocking']) >= 2:
-            # Open four/threat - blocking takes ABSOLUTE priority
+            # Check if blocking moves are URGENT (high score = open four / 4-in-a-row)
+            top_blocking_score = tiers['blocking'][0][0] if tiers['blocking'] else 0
+            is_urgent_threat = top_blocking_score >= 40_000_000  # Open four or 4-in-a-row
+
+            # If we have winning moves, prioritize them over non-urgent threats
+            if tiers['winning'] and not is_urgent_threat:
+                # We can win, and opponent threat is not urgent - take the win!
+                result = [move for score, move in tiers['winning'][:win_limit]]
+                # Add blocking as backup
+                result.extend([move for score, move in tiers['blocking'][:2]])
+                return result[:max(win_limit, 4)]
+
+            # Urgent threat - must block
             result = [move for score, move in tiers['blocking'][:block_limit]]
             # Maybe add one winning move as backup
             if tiers['winning']:

@@ -144,11 +144,14 @@ class HeuristicEvaluator:
 
         # Single pass through the line - check patterns at each position
         for i in range(length):
-            # Quick win check (highest priority, early return)
+            # Five-in-a-row check
+            # Note: In our variant with captures, 5-in-a-row is a PENDING win (can be broken)
+            # Not a terminal win. So we return PENDING_WIN_SCORE, not WIN_SCORE.
+            # Terminal wins (capture = 10 pieces) are handled in check_terminal_state.
             if not found_win and i <= length - 5:
                 if (line[i] == 1 and line[i+1] == 1 and line[i+2] == 1 and
                     line[i+3] == 1 and line[i+4] == 1):
-                    return self.WIN_SCORE
+                    return self.PENDING_WIN_SCORE
 
             # Open Four: _OOOO_ (pattern length 6)
             if not found_open_four and i <= length - 6:
@@ -344,7 +347,15 @@ class HeuristicEvaluator:
                         if line_key not in lines_seen:
                             lines_seen.add(line_key)
                             line_vals = get_line_values(r, c, dr, dc, board, player, opponent, self.board_size)
-                            score += self.score_line_numeric(line_vals, my_captures, is_critical)
+                            line_score = self.score_line_numeric(line_vals, my_captures, is_critical)
+                            score += line_score
+
+                            # If we found a 5-in-a-row (PENDING_WIN_SCORE), return immediately
+                            # Don't accumulate multiple scores from the same 5-in-a-row pattern
+                            # Note: We return PENDING_WIN_SCORE, not WIN_SCORE, because
+                            # a 5-in-a-row can still be broken by capture in our variant
+                            if line_score >= self.PENDING_WIN_SCORE:
+                                return self.PENDING_WIN_SCORE
 
         return score
 

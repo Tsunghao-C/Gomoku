@@ -93,16 +93,27 @@ def test_win_by_capture_vs_five():
 
     print(f"\nAI chose: {move}")
 
-    # Check what AI did
-    if move == (9, 10):
-        print("✅ PASS: AI correctly chose capture win!")
+    # Check what AI did - verify it's a capture-to-win move
+    test_board = board[:]
+    test_captures = captures.copy()
+    captured, _ = logic.make_move(move[0], move[1], 2, test_board, zobrist_hash)
+    test_captures[2] += len(captured)
+
+    print(f"  Captured {len(captured)} pieces -> {test_captures[2]} total")
+
+    # Check if it's a terminal win (10+ captures)
+    is_terminal = logic.check_terminal_state(test_board, test_captures, 2, move[0], move[1], 5)
+
+    if is_terminal and test_captures[2] >= 10:
+        print("✅ PASS: AI correctly chose capture-to-win (terminal, certain)!")
         return True
-    elif move in [(10, 11), (10, 12)]:
+    elif move in [(10, 11), (10, 6)]:
         print("❌ FAIL: AI chose 5-in-a-row over capture win!")
         print("   Problem: Capture win is more certain (no pending win status)")
         return False
     else:
-        print(f"❌ FAIL: AI chose unexpected move: {move}")
+        print(f"⚠️  WARNING: AI chose unexpected move: {move}")
+        print(f"   Is terminal: {is_terminal}, Captures: {test_captures[2]}")
         return False
 
 
