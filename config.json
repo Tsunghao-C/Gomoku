@@ -60,10 +60,7 @@
       }
     },
     "debug": {
-      "verbose": true,
-      "show_critical_moves": true,
-      "show_move_scores": false,
-      "show_move_categories": false,
+      "verbose": false,
       "show_terminal_states": false
     }
   },

@@ -122,9 +122,14 @@ class MinimaxAlgorithm:
             if self.debug_verbose:
                 print(f"Completed depth {depth}. Best move: {best_move_so_far}, Score: {best_score_so_far:.0f}")
 
-            if best_score_so_far >= self.win_score * 0.9:
+            # Only stop early if we found a TERMINAL win (not just high heuristic score)
+            # Terminal wins should be very close to exactly win_score
+            # High heuristic scores (pending_win + bonuses) can exceed win_score * 0.9
+            # but are not guaranteed wins
+            if abs(best_score_so_far) >= self.win_score * 0.98 and \
+               abs(abs(best_score_so_far) - self.win_score) < self.win_score * 0.05:
                 if self.debug_verbose:
-                    print(f"Found a winning move at depth {depth}. Score: {best_score_so_far:.0f}")
+                    print(f"Found a terminal winning move at depth {depth}. Score: {best_score_so_far:.0f}")
                     print(f"  Move: {best_move_so_far}")
                 break
 
