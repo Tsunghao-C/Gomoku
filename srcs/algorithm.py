@@ -123,11 +123,9 @@ class MinimaxAlgorithm:
                 print(f"Completed depth {depth}. Best move: {best_move_so_far}, Score: {best_score_so_far:.0f}")
 
             # Only stop early if we found a TERMINAL win (not just high heuristic score)
-            # Terminal wins should be very close to exactly win_score
-            # High heuristic scores (pending_win + bonuses) can exceed win_score * 0.9
-            # but are not guaranteed wins
-            if abs(best_score_so_far) >= self.win_score * 0.98 and \
-               abs(abs(best_score_so_far) - self.win_score) < self.win_score * 0.05:
+            # Terminal wins return 2x win_score, heuristic scores can reach ~1.6B
+            # Check if score is >= 1.9x win_score (guaranteed terminal win)
+            if abs(best_score_so_far) >= self.win_score * 1.9:
                 if self.debug_verbose:
                     print(f"Found a terminal winning move at depth {depth}. Score: {best_score_so_far:.0f}")
                     print(f"  Move: {best_move_so_far}")
@@ -188,7 +186,9 @@ class MinimaxAlgorithm:
             if is_terminal:
                 print(f"  DEBUG minimax_root: Terminal state detected at move ({r}, {c})")
                 print(f"    Player: {ai_player}, Captures: {captures}")
-                score = self.win_score
+                # Terminal wins must be higher than any heuristic evaluation
+                # Heuristic can reach ~1.6B (pending_win + bonuses), so use 2x win_score
+                score = self.win_score * 2
             else:
                 # Recursive minimax call
                 score = self.minimax(
@@ -314,7 +314,9 @@ class MinimaxAlgorithm:
                 is_terminal = check_terminal_func(board, captures, player, r, c)
                 if is_terminal:
                     # Terminal state detected - this position wins the game
-                    score = self.win_score
+                    # Terminal wins must be higher than any heuristic evaluation
+                    # Heuristic can reach ~1.6B (pending_win + bonuses), so use 2x win_score
+                    score = self.win_score * 2
                 else:
                     # Standard recursive search
                     score = self.minimax(
@@ -368,7 +370,9 @@ class MinimaxAlgorithm:
 
                 is_terminal = check_terminal_func(board, captures, player, r, c)
                 if is_terminal:
-                    score = -self.win_score
+                    # Opponent wins - this is worst case for us
+                    # Terminal losses must be lower than any heuristic evaluation
+                    score = -self.win_score * 2
                 else:
                     # Standard recursive search
                     score = self.minimax(
