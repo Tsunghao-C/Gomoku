@@ -75,6 +75,20 @@ See [docs/CONFIG_REFERENCE.md](docs/CONFIG_REFERENCE.md) for a detailed guide on
 
 See LICENSE file for details.
 
+## Noes after evaluation
+
+### heuristic improvement ideas
+1. Consider taking the number of stones in evaluation as well
+2. Dynamic heuristic weight based on history actions (Monte Carlo heuristic)
+
+### Nice to have features
+1. Enable undo a move
+2. Enable a mode to visualize what are the candidate moves that are taken into consideration by AI
+
+### Next step
+1. Deploy on web to be accessable
+2. Add a UI to configure the difficulty of AI (depths for AI)
+
 ---
 
 **42 AI Project** - Building intelligent game-playing systems
