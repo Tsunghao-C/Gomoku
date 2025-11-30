@@ -111,7 +111,7 @@ def test_win_by_capture_vs_five():
         return False
     else:
         print(f"❌ FAIL: AI chose unexpected move: {move}")
-        print(f"   Expected: Any capture win move (e.g., (9,10), (7,7), (7,8))")
+        print("   Expected: Any capture win move (e.g., (9,10), (7,7), (7,8))")
         return False
 
 
