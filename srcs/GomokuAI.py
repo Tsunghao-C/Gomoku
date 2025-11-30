@@ -39,6 +39,8 @@ class GomokuAI:
         # Debug settings
         debug_cfg = ai_cfg.get("debug", {})
         self.debug_verbose = debug_cfg.get("verbose", False)
+        # Temporarily enable verbose for debugging 5-in-a-row detection
+        # self.debug_verbose = True
 
         # Initialize algorithm and heuristic with config
         self.algorithm = MinimaxAlgorithm(config)
@@ -225,6 +227,7 @@ class GomokuAI:
     def _find_critical_moves(self, board, player):
         """
         Find critical moves: positions that complete or block 4-in-a-row.
+        Also detects opponent 5-in-a-row and finds capture moves that break them.
         These moves MUST always be considered regardless of windowing.
 
         Returns:
@@ -234,7 +237,88 @@ class GomokuAI:
         blocking_positions = set()
 
         directions = [(0, 1), (1, 0), (1, 1), (1, -1)]
+        opponent = 2 if player == 1 else 1
 
+        # First, detect 5-in-a-row threats from opponent
+        # Use same logic as check_win but check for opponent pieces
+        opponent_five_lines = []  # List of line_coords sets
+        seen_lines = set()  # Track lines we've already found
+        
+        for r in range(self.board_size):
+            for c in range(self.board_size):
+                idx = r * self.board_size + c
+                if board[idx] != opponent:
+                    continue
+
+                # Check all 4 directions for 5-in-a-row (same as check_win)
+                for dr, dc in directions:
+                    line_coords = [(r, c)]
+                    
+                    # Check forward
+                    for i in range(1, 5):
+                        nr, nc = r + dr * i, c + dc * i
+                        if not (0 <= nr < self.board_size and 0 <= nc < self.board_size):
+                            break
+                        n_idx = nr * self.board_size + nc
+                        if board[n_idx] == opponent:
+                            line_coords.append((nr, nc))
+                        else:
+                            break
+                    
+                    # Check backward
+                    for i in range(1, 5):
+                        nr, nc = r - dr * i, c - dc * i
+                        if not (0 <= nr < self.board_size and 0 <= nc < self.board_size):
+                            break
+                        n_idx = nr * self.board_size + nc
+                        if board[n_idx] == opponent:
+                            line_coords.insert(0, (nr, nc))
+                        else:
+                            break
+                    
+                    # If we have 5 or more in a row, this is a pending win threat
+                    if len(line_coords) >= 5:
+                        # Use sorted tuple as key to avoid duplicates
+                        line_key = tuple(sorted(line_coords))
+                        if line_key not in seen_lines:
+                            seen_lines.add(line_key)
+                            opponent_five_lines.append(line_coords)
+
+        # For each opponent 5-in-a-row, find capture moves that break it
+        # We check all empty positions near the line to see if playing there captures pieces in the line
+        for line_coords in opponent_five_lines:
+            line_set = set(line_coords)  # For fast lookup
+            
+            # Check all empty positions within 3 squares of any position in the line
+            checked_positions = set()
+            for r_line, c_line in line_coords:
+                # Check positions in a 7x7 area around each position in the line
+                for dr_check in range(-3, 4):
+                    for dc_check in range(-3, 4):
+                        r_check = r_line + dr_check
+                        c_check = c_line + dc_check
+                        
+                        if not (0 <= r_check < self.board_size and 0 <= c_check < self.board_size):
+                            continue
+                        
+                        idx_check = r_check * self.board_size + c_check
+                        if board[idx_check] != 0:
+                            continue  # Not empty
+                        
+                        if (r_check, c_check) in checked_positions:
+                            continue
+                        checked_positions.add((r_check, c_check))
+                        
+                        # Check if playing here would capture any pieces in the 5-in-a-row
+                        captured = self._get_capture_positions(r_check, c_check, player, board)
+                        if captured:
+                            # Check if any captured piece is part of the 5-in-a-row
+                            for cap_r, cap_c in captured:
+                                if (cap_r, cap_c) in line_set:
+                                    blocking_positions.add((r_check, c_check))
+                                    break  # Found a capture that breaks the line
+
+        # Now detect 4-in-a-row and 3-in-a-row threats (original logic)
         for r in range(self.board_size):
             for c in range(self.board_size):
                 idx = r * self.board_size + c
@@ -467,6 +551,13 @@ class GomokuAI:
     def _categorize_move(self, r, c, total_score, score_attack, score_defend,
                         winning_positions, blocking_positions, tiers):
         """Categorize a move into the appropriate priority tier."""
+        # Boost score for moves that break 5-in-a-row (blocking positions)
+        # These moves should have extremely high priority
+        if (r, c) in blocking_positions:
+            # Give moves that break 5-in-a-row a very high score to ensure they're prioritized
+            # Use a score higher than any normal heuristic evaluation
+            total_score = self.WIN_SCORE * 0.5  # Half of win score, very high priority
+        
         move_data = (total_score, (r, c))
 
         if (r, c) in winning_positions:

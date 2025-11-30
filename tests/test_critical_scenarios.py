@@ -123,6 +123,10 @@ def test_break_opponent_pending_win():
     2. Make own 5-in-a-row
     
     AI should capture to break (survival > offense).
+    
+    Setup: Black has 5-in-a-row on row 9.
+    White can capture two Black pieces that are part of the 5-in-a-row.
+    Capture pattern: W-B-B-? where ? is where White plays to capture the two B's.
     """
     print("\n" + "="*70)
     print("TEST: Break Opponent's Pending Win via Capture")
@@ -134,73 +138,22 @@ def test_break_opponent_pending_win():
     logic = GomokuLogic(config)
     ai = GomokuAI(config)
 
-    # Setup:
-    # Black has 5-in-a-row at (9,7)-(9,11)
-    # White can capture (9,8)-(9,9) by playing (9,10) to break it
-    # White also has 4-in-a-row and can complete to 5
     pieces = {
-        # Black 5-in-a-row
-        (9, 7): 1, (9, 8): 1, (9, 9): 1, (9, 10): 1, (9, 11): 1,
+        # Black vertical 5-in-a-row on column 9
+        (5, 9): 1, (6, 9): 1, (7, 9): 1, (8, 9): 1, (9, 9): 1,  # (9,9) is also part of capture pattern below
 
-        # White pieces to set up capture: W-B-B-?
-        (9, 6): 2,  # White before Black's 5
-        (9, 12): 2,  # White after Black's 5
-        # White can capture (9,8)-(9,9) by playing (9,7) - wait, (9,7) is taken
-        # Let me reconfigure...
-    }
+        # White capture pattern on row 9: W-B-B-? where ? is (9,10)
+        (9, 7): 2,   # White before
+        (9, 8): 1,   # Black (part of capture pair)
+        # (9, 9): already defined above as part of vertical 5-in-a-row
+        # (9, 10): empty - White can play here to capture (9,8) and (9,9)
+        (9, 11): 2,  # White after
 
-    # Actually, let me reconfigure to make capture work:
-    # Black: (9,8), (9,9), (9,10), (9,11), (9,12) = 5 in a row
-    # White at (9,7) and (9,13) - can capture middle pieces
-    pieces = {
-        # Black 5-in-a-row
-        (9, 8): 1, (9, 9): 1, (9, 10): 1, (9, 11): 1, (9, 12): 1,
-
-        # White can capture (9,9)-(9,10) by playing at (9,11) - wait that's taken
-        # This is tricky with capture mechanics...
-
-        # Let me think of valid capture pattern:
-        # W-B-B-? where White plays at ? to capture B-B
-        # So: (9,7):W, (9,8):B, (9,9):B, and White plays (9,10) to capture
-        # But then Black would only have 3 pieces: (9,8), (9,9), and others
-
-        # Clearer setup:
-        (9, 10): 1, (9, 11): 1, (9, 12): 1, (9, 13): 1, (9, 14): 1,  # Black 5
-        (9, 9): 2,  # White before
-        (9, 15): 2,  # White after
-        # White can capture (9,11)-(9,12) by playing (9,13) - wait, that's taken
-
-        # I need to set up where Black has 5, and 2 of them are capturable
-        # Pattern: W-?-B-B-B-B-B where 2 middle B's can be captured
-    }
-
-    # Simpler: Just set up Black with 5 and White with ability to capture
-    pieces = {
-        # Black has 5-in-a-row on row 9
-        (9, 6): 1, (9, 7): 1, (9, 8): 1, (9, 9): 1, (9, 10): 1,
-
-        # White has pieces that can capture (9,7)-(9,8)
-        (9, 5): 2,  # W before
-        (9, 9): 2,  # Would conflict!
-    }
-
-    # Let me use a working capture pattern:
-    # Row 9: W(9,5), B(9,6), B(9,7), ?(9,8), B(9,9), B(9,10), B(9,11)
-    # If White plays (9,8), captures (9,6)-(9,7), leaving B at (9,9)-(9,11) = only 3
-    pieces = {
-        (9, 5): 2,   # White
-        (9, 6): 1,   # Black
-        (9, 7): 1,   # Black - these two can be captured
-        # (9, 8): empty - White can play here
-        (9, 9): 1,   # Black
-        (9, 10): 1,  # Black
-        (9, 11): 1,  # Black - total 5 Black pieces
-
-        # White has 4-in-a-row elsewhere and can complete
+        # White also has 4-in-a-row elsewhere and can complete to 5
         (10, 7): 2, (10, 8): 2, (10, 9): 2, (10, 10): 2,
         # Can complete at (10,6) or (10,11)
 
-        # Filler
+        # Filler pieces
         (8, 8): 2,
     }
 
@@ -208,9 +161,9 @@ def test_break_opponent_pending_win():
 
     board, captures, zobrist_hash = setup_board_directly(logic, pieces, captures)
 
-    print("Black has 5-in-a-row at row 9: (9,6), (9,7), (9,9), (9,10), (9,11)")
-    print("White can capture (9,6)-(9,7) by playing (9,8)")
-    print("This breaks Black's 5-in-a-row! (leaves only 3)")
+    print("Black has 5-in-a-row vertically: (5,9), (6,9), (7,9), (8,9), (9,9)")
+    print("White can capture (9,8) and (9,9) by playing (9,10)")
+    print("This breaks Black's 5-in-a-row! (removes (9,9) which is part of the line)")
     print("")
     print("White also has 4-in-a-row and can make own 5-in-a-row")
     print("But should prioritize BREAKING opponent's threat!")
@@ -221,20 +174,33 @@ def test_break_opponent_pending_win():
 
     print(f"\nAI chose: {move}")
 
-    # Check if AI captures to break
-    if move == (9, 8):
-        # Verify it actually captures
-        test_board = board[:]
-        captured, _ = logic.make_move(9, 8, 2, test_board, zobrist_hash)
-        if len(captured) >= 2:
+    # Check if AI captures to break the 5-in-a-row
+    # The 5-in-a-row is at: (5,9), (6,9), (7,9), (8,9), (9,9)
+    five_in_a_row_set = {(5, 9), (6, 9), (7, 9), (8, 9), (9, 9)}
+
+    # Verify the move captures pieces that are part of the 5-in-a-row
+    test_board = board[:]
+    test_hash = zobrist_hash
+    captured, _ = logic.make_move(move[0], move[1], 2, test_board, test_hash)
+
+    if len(captured) >= 2:
+        # Check if any captured piece is part of the 5-in-a-row
+        captured_set = set(captured)
+        breaks_line = bool(captured_set & five_in_a_row_set)
+
+        if breaks_line:
             print(f"✅ PASS: AI captured {len(captured)} pieces to break 5-in-a-row!")
+            print(f"   Captured pieces: {captured}")
+            print(f"   Pieces in 5-in-a-row that were captured: {captured_set & five_in_a_row_set}")
             return True
         else:
-            print("❌ FAIL: Move didn't capture as expected")
+            print(f"❌ FAIL: Move {move} captured {len(captured)} pieces but none are in the 5-in-a-row!")
+            print(f"   Captured: {captured}")
+            print(f"   5-in-a-row: {five_in_a_row_set}")
             return False
     else:
-        print("❌ FAIL: AI didn't capture to break opponent's 5-in-a-row!")
-        print("   AI must defend against pending win!")
+        print(f"❌ FAIL: Move {move} didn't capture enough pieces (got {len(captured)})")
+        print("   AI must capture to break opponent's 5-in-a-row!")
         return False
 
 
